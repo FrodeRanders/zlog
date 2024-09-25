@@ -35,7 +35,7 @@ namespace keywords = boost::log::keywords;
 
 
 // Function to list and pair files with ".header" and ".payload" suffixes
-std::map<std::string, std::pair<fs::path, fs::path>> findFilePairs(const fs::path& dirPath) {
+std::map<std::string, std::pair<fs::path, fs::path>> findFilePairs(const std::string& dirPath) {
     std::map<std::string, std::pair<fs::path, fs::path>> filePairs;
 
     if (fs::exists(dirPath) && fs::is_directory(dirPath)) {
@@ -83,8 +83,20 @@ bool detectDayRollover(const std::string& currentDayPath) {
     return (currentDayPath != nextDayPath);
 }
 
+std::string getCurrentPath(const std::string& baseDir) {
+    std::time_t now = std::time(nullptr);
+    std::tm* nowTm = std::localtime(&now);
+
+    std::string path = baseDir + "/" +
+        std::to_string(1900 + nowTm->tm_year) + "/" +
+        std::to_string(nowTm->tm_mon + 1) + "/" +
+        std::to_string(nowTm->tm_mday);
+
+    return path;
+}
+
 // Function to process files and monitor rollover
-void monitorDirectoryAndProcess(const std::string& baseDir, const std::string& executable) {
+void monitorDirectoryAndProcess(const fs::path& myself, const std::string& baseDir) {
     // Set up file logging
     logging::add_file_log(
         keywords::file_name = "monitor_%N.log",
@@ -95,18 +107,23 @@ void monitorDirectoryAndProcess(const std::string& baseDir, const std::string& e
 
     // Add common attributes, such as time stamps and process IDs
     logging::add_common_attributes();
-    BOOST_LOG_TRIVIAL(debug) << "Header and payload processor is: " << executable << std::endl;
+    BOOST_LOG_TRIVIAL(debug) << "Processor is: " << myself << std::endl;
 
-    //
-    std::string currentDayPath = baseDir + "/" + "2024/09/25";  // TODO
+    // Extract the program's base name (without the directory part)
+    std::vector<fs::path> location;
+    location.push_back(myself.parent_path());
+    std::string executable = myself.filename().string();
+
+    // Start at current day
+    std::string currentPath = getCurrentPath(baseDir);
 
     while (true) {
-        BOOST_LOG_TRIVIAL(info) << "Monitoring directory: " << currentDayPath << std::endl;
+        BOOST_LOG_TRIVIAL(info) << "Monitoring directory: " << currentPath << std::endl;
 
         // Find pairs of files in the current directory
-        auto filePairs = findFilePairs(currentDayPath);
+        auto filePairs = findFilePairs(currentPath);
         if (filePairs.empty()) {
-            BOOST_LOG_TRIVIAL(error) << "No matching .header and .payload pairs found in directory: " << currentDayPath << std::endl;
+            BOOST_LOG_TRIVIAL(error) << "No matching .header and .payload pairs found in directory: " << currentPath << std::endl;
         } else {
             std::vector<std::shared_ptr<bp::child>> children;
 
@@ -117,14 +134,25 @@ void monitorDirectoryAndProcess(const std::string& baseDir, const std::string& e
                 const fs::path& payloadFile = pair.second.second;
 
                 // Launch a new child process using Boost.Process
-                std::shared_ptr<bp::child> child = std::make_shared<bp::child>(
-                    bp::search_path(executable),
-                    "-p",
-                    std::to_string(++id),
-                    headerFile.string(),
-                    payloadFile.string());
+                try {
+                    std::shared_ptr<bp::child> child = std::make_shared<bp::child>(
+                        bp::search_path(executable, location),
+                        "-p",
+                        std::to_string(++id),
+                        headerFile.string(),
+                        payloadFile.string());
 
-                children.push_back(child);
+                    BOOST_LOG_TRIVIAL(debug)
+                    << "Processor: " << id << " "
+                    << headerFile.string() << " "
+                    << payloadFile.string()
+                    << std::endl;
+
+                    children.push_back(child);
+                }
+                catch (const boost::process::v1::process_error& e) {
+                    BOOST_LOG_TRIVIAL(error) << "Failed to start processor: " << e.what() << std::endl;
+                }
             }
 
             // Wait for all child processes to finish
@@ -138,67 +166,44 @@ void monitorDirectoryAndProcess(const std::string& baseDir, const std::string& e
         std::this_thread::sleep_for(std::chrono::seconds(5));  // Simulate periodic check
 
         // Check if we have rolled over to the next day
-        if (detectDayRollover(currentDayPath)) {
-            std::time_t now = std::time(nullptr);
-            std::tm* nowTm = std::localtime(&now);
-
-            // Update the current day directory to the new one
-            currentDayPath = baseDir + "/" + std::to_string(1900 + nowTm->tm_year) + "/" +
-                             std::to_string(nowTm->tm_mon + 1) + "/" +
-                             std::to_string(nowTm->tm_mday);
-
-            BOOST_LOG_TRIVIAL(info) << "Detected day rollover. Switching to new directory: " << currentDayPath << std::endl;
+        if (detectDayRollover(currentPath)) {
+            currentPath = getCurrentPath(baseDir);
+            BOOST_LOG_TRIVIAL(info) << "Detected day rollover. Switching to new directory: " << currentPath << std::endl;
         }
     }
 }
 
 int processPair(unsigned long id, const std::string& headerFile, const std::string& payloadFile);
+void printStackTrace();
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <base-directory>" << std::endl;
+    try {
+        if (argc < 2) {
+            std::cerr << "Usage: " << argv[0] << " <base-directory>" << std::endl;
+            return 1;
+        }
+
+        // Set up console logging
+        logging::add_console_log(
+            std::clog,
+            keywords::format = "[%TimeStamp%] [%Severity%] %Message%"
+        );
+
+        if (std::strcmp(argv[1], "-p") == 0 && argc == 5) {
+            unsigned long id = std::stoul(argv[2]);
+            return processPair(id, argv[3], argv[4]);
+        }
+
+        monitorDirectoryAndProcess(argv[0], argv[1]);
+    }
+    catch (const std::invalid_argument& ia) {
+        std::cerr << "Invalid argument: " << ia.what() << std::endl;
         return 1;
     }
-
-    // Set up console logging
-    logging::add_console_log(
-        std::clog,
-        keywords::format = "[%TimeStamp%] [%Severity%] %Message%"
-    );
-
-    if (std::strcmp(argv[1], "-p") == 0 && argc == 5) {
-        unsigned long id = std::stoul(argv[2]);
-
-        return processPair(id, argv[3], argv[4]);
+    catch (std::exception& e) {
+        std::cerr << "Failed to process logs: " << e.what() << std::endl;
+        printStackTrace();
+        return 1;
     }
-
-    std::string baseDir = argv[1];
-
-    std::string executable;
-    char path[PATH_MAX];
-
-#if defined(__APPLE__) && defined(__MACH__)
-    // macOS specific code
-    uint32_t size = sizeof(path);
-    if (_NSGetExecutablePath(path, &size) == 0) {
-        executable = path;
-    } else {
-        std::cerr << "Buffer too small; need size: " << size << std::endl;
-        std::exit(1);
-    }
-#elif defined(__linux__)
-    // Linux specific code
-    ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);
-    if (count != -1) {
-        path[count] = '\0';  // Null-terminate the path
-        executable = path;
-    } else {
-        std::cerr << "Error determining the executable path on Linux." << std::endl;
-    }
-#else
-#error "Unsupported platform"
-#endif
-
-    monitorDirectoryAndProcess(baseDir, executable);
     return 0;
 }

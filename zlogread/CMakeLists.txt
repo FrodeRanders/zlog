@@ -3,23 +3,22 @@ project(zlogread VERSION 1.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-set(BOOST_ROOT /opt/local)
-set(BOOST_INCLUDEDIR /opt/local/include)
-set(BOOST_LIBRARYDIR /opt/local/lib)
+
+set(BOOST_ROOT /usr/local/boost-1.86.0)
+set(BOOST_INCLUDEDIR /usr/local/boost-1.86.0/include)
+set(BOOST_LIBRARYDIR /usr/local/boost-1.86.0/lib)
+
 set(TARGET_NAME zlogread)
 
 add_executable(${TARGET_NAME}
         main.cpp
         processor.cpp
+        stacktrace.cpp
 )
 
-target_compile_definitions(${TARGET_NAME}
-        PRIVATE
-        BOOST_ASIO_HAS_STD_INVOKE_RESULT=1
-)
-
-find_package(Boost 1.76 REQUIRED COMPONENTS
+find_package(Boost 1.86 REQUIRED COMPONENTS
         log
         log_setup
         filesystem

@@ -117,40 +117,48 @@ void incrementDate(std::tm* dateTm) {
 }
 
 int main(int argc, char* argv[]) {
-    // Check if the number of days is passed as a parameter
-    if (argc != 4) {
-        std::cerr << "Usage: " << argv[0] << " <number_of_days> <number_of_file_pairs> <number_of_entries>" << std::endl;
+    try {
+        if (argc != 5) {
+            std::cerr << "Usage: " << argv[0] << " <base-directory> <number_of_days> <number_of_file_pairs> <number_of_entries>" << std::endl;
+            return 1;
+        }
+
+        unsigned int idx = 1;
+        std::string baseDir = argv[idx++];
+
+        unsigned int numberOfDays = std::stoul(argv[idx++]);
+        if (numberOfDays == 0) {
+            std::cerr << "Provide number of days" << std::endl;
+            return 1;
+        }
+
+        unsigned int numberOfFilePairs = std::stoul(argv[idx++]);
+        if (numberOfFilePairs == 0) {
+            std::cerr << "Provide number of file pairs" << std::endl;
+        }
+
+        unsigned int numberOfEntries = std::stoul(argv[idx++]);
+        if (numberOfEntries == 0) {
+            std::cerr << "Provide number of entries" << std::endl;
+        }
+
+        // Start date (today)
+        std::time_t now = std::time(nullptr);
+        std::tm dateTm = *std::localtime(&now);
+
+        // Simulate writing data for the specified number of days
+        for (int day = 0; day < numberOfDays; ++day) {
+            generateTestDataForDay(baseDir, &dateTm, numberOfFilePairs, numberOfEntries);
+            incrementDate(&dateTm);  // Move to the next day
+        }
+    }
+    catch (const std::invalid_argument& ia) {
+        std::cerr << "Invalid argument: " << ia.what() << std::endl;
         return 1;
     }
-
-    unsigned int numberOfDays = std::stoul(argv[1]);
-    if (numberOfDays == 0) {
-        std::cerr << "Provide number of days" << std::endl;
+    catch (const std::exception& e) {
+        std::cerr << "Failed to generate data: " << e.what() << std::endl;
         return 1;
     }
-
-    unsigned int numberOfFilePairs = std::stoul(argv[2]);
-    if (numberOfFilePairs == 0) {
-        std::cerr << "Provide number of file pairs" << std::endl;
-    }
-
-    unsigned int numberOfEntries = std::stoul(argv[3]);
-    if (numberOfEntries == 0) {
-        std::cerr << "Provide number of entries" << std::endl;
-    }
-
-    // Base directory where files will be written (e.g., /path/to/logs)
-    std::string baseDir = ".";
-
-    // Start date (today)
-    std::time_t now = std::time(nullptr);
-    std::tm dateTm = *std::localtime(&now);
-
-    // Simulate writing data for the specified number of days
-    for (int day = 0; day < numberOfDays; ++day) {
-        generateTestDataForDay(baseDir, &dateTm, numberOfFilePairs, numberOfEntries);
-        incrementDate(&dateTm);  // Move to the next day
-    }
-
     return 0;
 }

@@ -22,14 +22,26 @@
 #include <boost/log/attributes/timer.hpp>
 #include <boost/log/attributes/named_scope.hpp>
 
+namespace fs = boost::filesystem;
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
 
+std::vector<std::string> split(const std::string& line, char delimiter) {
+    std::vector<std::string> result;
+    std::stringstream ss(line);
+    std::string item;
+
+    while (std::getline(ss, item, delimiter)) {
+        result.push_back(item);
+    }
+
+    return result;
+}
 
 // Utility function to get file size
-static std::streamoff getFileSize(const std::string& filename) {
+static std::streamoff getFileSize(const std::string& path) {
     struct stat stat_buf;
-    int rc = stat(filename.c_str(), &stat_buf);
+    int rc = stat(path.c_str(), &stat_buf);
     return rc == 0 ? stat_buf.st_size : -1;
 }
 
@@ -84,6 +96,7 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
     // Open both files and keep them open
     std::ifstream payloadStream(payloadFile, std::ios::binary | std::ios::in);
     std::ifstream headerStream(headerFile, std::ios::binary | std::ios::in);
+    unsigned long counter = 0L;
 
     // Check for file open errors
     if (!payloadStream.is_open()) {
@@ -98,59 +111,80 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
 
     while (true) {
         try {
-            // Seek to the last read position in the header file
-            headerStream.clear(); // Clear EOF flag if set
-            headerStream.seekg(lastHeaderPos); // Move to last read position in header
+            if (getFileSize(headerFile) > lastHeaderPos) {
+                // Seek to the last read position in the header file
+                headerStream.clear(); // Clear EOF flag if set
+                headerStream.seekg(lastHeaderPos); // Move to last read position in header
 
-            // Variables to hold header entry information
-            std::streamoff offset;
-            std::size_t inputSize, outputSize;
+                // Read header entries
+                std::string line;
+                while (std::getline(headerStream, line)) {
+                    std::vector<std::string> data = split(line, ',');
+                    if (data.size() != 10) {
+                        BOOST_LOG_TRIVIAL(info) << "Header not yet ready: " << line << " (" << headerFile << ")" << std::endl;
+                        break; // try again later
+                    }
+                    std::string header;
+                    header += std::to_string(++counter);
+                    header += ": ";
 
-            // Read new header entries
-            while (headerStream.read(reinterpret_cast<char*>(&offset), sizeof(offset)) &&
-                   headerStream.read(reinterpret_cast<char*>(&inputSize), sizeof(inputSize)) &&
-                   headerStream.read(reinterpret_cast<char*>(&outputSize), sizeof(outputSize))) {
+                    for (int i = 0; i < 7; ++i) {
+                        header += data[i];
+                        header += " | ";
+                    }
 
-                // Check if the corresponding payload data is fully written
-                std::streamoff expectedPayloadSize = offset + inputSize + outputSize;
+                    auto inputSize = static_cast<std::streamsize>(std::stoul(data[7]));
+                    header += std::to_string(inputSize);
+                    header += " | ";
+                    auto outputSize = static_cast<std::streamsize>(std::stoul(data[8]));
+                    header += std::to_string(outputSize);
+                    header += " | ";
+                    auto offset = static_cast<std::streamoff>(std::stoul(data[9]));
+                    header += std::to_string(offset);
 
-                // Get the current payload file size
-                if (getFileSize(payloadFile) >= expectedPayloadSize) {
-                    // Payload data is complete, now read and process it
+                    BOOST_LOG_TRIVIAL(trace) << header << std::endl;
 
-                    // Seek to the last read position in the payload file
-                    payloadStream.clear(); // Clear EOF flag if set
-                    payloadStream.seekg(offset);  // Move to the payload offset
+                    // Check if the corresponding payload data is fully written
+                    std::streamoff expectedPayloadSize = offset + inputSize + outputSize;
 
-                    // Read input and output from the payload file
-                    std::vector<char> inputBuffer(inputSize);
-                    std::vector<char> outputBuffer(outputSize);
+                    // Get the current payload file size
+                    if (getFileSize(payloadFile) >= expectedPayloadSize) {
+                        // Payload data is complete, now read and process it
 
-                    payloadStream.read(inputBuffer.data(), inputSize);
-                    payloadStream.read(outputBuffer.data(), outputSize);
+                        // Seek to the last read position in the payload file
+                        payloadStream.clear(); // Clear EOF flag if set
+                        payloadStream.seekg(offset);  // Move to the payload offset
 
-                    // Process input/output
-                    processInputOutput(inputBuffer, outputBuffer);
+                        // Read input and output from the payload file
+                        std::vector<char> inputBuffer(inputSize);
+                        std::vector<char> outputBuffer(outputSize);
 
-                    // Update the last read position in both the header and payload files
-                    lastPayloadPos = expectedPayloadSize;
-                    lastHeaderPos = headerStream.tellg(); // Current position in header file
+                        payloadStream.read(inputBuffer.data(), inputSize);
+                        payloadStream.read(outputBuffer.data(), outputSize);
 
-                    // Persist the current read positions
-                    saveState(lastHeaderPos, lastPayloadPos);
+                        // Process input/output
+                        processInputOutput(inputBuffer, outputBuffer);
 
-                } else {
-                    // Payload is incomplete, wait and retry later
-                    break;
+                        // Update the last read position in both the header and payload files
+                        lastPayloadPos = expectedPayloadSize;
+                        lastHeaderPos = headerStream.tellg(); // Current position in header file
+
+                        // Persist the current read positions
+                        saveState(lastHeaderPos, lastPayloadPos);
+
+                    } else {
+                        break; // try again later
+                    }
                 }
             }
         } catch (const std::exception& e) {
             BOOST_LOG_TRIVIAL(error) << "Error: " << e.what() << std::endl;
-            break;
+            throw;
         }
+        BOOST_LOG_TRIVIAL(trace) << "File processed: " << headerFile << std::endl;
 
         // Sleep before polling again to avoid busy waiting
-        sleep(1); // Adjust poll interval as necessary
+        sleep(10); // seconds!
 
         // Handle file rotation: Check if files have been rotated
         if (getFileSize(payloadFile) == -1 || getFileSize(headerFile) == -1) {

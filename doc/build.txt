@@ -1,0 +1,38 @@
+Download a recent version of Boost, in this case 1.86.0
+
+# Unpack
+> tar -xf boost_1_86_0.tar.gz
+
+> cd boost_1_86_0
+
+> ./bootstrap.sh --prefix=/usr/local/boost-1.86.0
+Building B2 engine..
+
+###
+###
+### Using 'clang' toolset.
+###
+###
+
+Apple clang version 16.0.0 (clang-1600.0.26.3)
+Target: x86_64-apple-darwin24.0.0
+Thread model: posix
+InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
+
+###
+###
+...
+
+> sudo ./b2 cxxflags=-std=c++20 install
+Performing configuration checks
+
+    - default address-model    : 64-bit [1]
+    - default architecture     : x86 [1]
+    - compiler supports SSE2   : yes [2]
+    - compiler supports SSE4.1 : yes [2]
+...
+
+...updated 19259 targets...
+
+> 
+
