@@ -26,7 +26,7 @@ namespace fs = boost::filesystem;
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
 
-std::vector<std::string> split(const std::string& line, char delimiter) {
+static std::vector<std::string> split(const std::string& line, char delimiter) {
     std::vector<std::string> result;
     std::stringstream ss(line);
     std::string item;
@@ -46,21 +46,34 @@ static std::streamoff getFileSize(const std::string& path) {
 }
 
 // Utility function to save the current state (last read positions)
-static void saveState(std::streamoff lastHeaderPos, std::streamoff lastPayloadPos) {
-    std::ofstream stateFile("read_state.dat", std::ios::binary | std::ios::out);
-    if (stateFile) {
-        stateFile.write(reinterpret_cast<char*>(&lastHeaderPos), sizeof(lastHeaderPos));
-        stateFile.write(reinterpret_cast<char*>(&lastPayloadPos), sizeof(lastPayloadPos));
-        stateFile.close();
+static void saveState(unsigned long id, std::streamoff lastHeaderPos, std::streamoff lastPayloadPos) {
+    std::string name = "processor-" + std::to_string(id) + ".state";
+    std::ofstream stateStream(name, std::ios::binary | std::ios::out | std::ios::trunc);
+    if (stateStream) {
+        stateStream << std::to_string(lastHeaderPos) << "," << std::to_string(lastPayloadPos) << std::endl;
+        stateStream.close();
     }
+    BOOST_LOG_TRIVIAL(trace) << "Saved offsets: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
 }
 
 // Utility function to load the saved state (last read positions)
-static void loadState(std::streamoff &lastHeaderPos, std::streamoff &lastPayloadPos) {
-    std::ifstream stateFile("read_state.dat", std::ios::binary | std::ios::in);
+static void loadState(unsigned long id, std::streamoff &lastHeaderPos, std::streamoff &lastPayloadPos) {
+    std::string name = "processor-" + std::to_string(id) + ".state";
+    std::ifstream stateFile(name, std::ios::binary | std::ios::in);
     if (stateFile) {
-        stateFile.read(reinterpret_cast<char*>(&lastHeaderPos), sizeof(lastHeaderPos));
-        stateFile.read(reinterpret_cast<char*>(&lastPayloadPos), sizeof(lastPayloadPos));
+        std::string line;
+        if (std::getline(stateFile, line)) {
+            std::vector<std::string> data = split(line, ',');
+            if (data.size() != 2) {
+                BOOST_LOG_TRIVIAL(error) << "Corrupt state: " << line << " (" << name << ")" << std::endl;
+            } else {
+                lastHeaderPos = static_cast<std::streamoff>(std::stoul(data[0]));
+                lastPayloadPos = static_cast<std::streamoff>(std::stoul(data[1]));
+                BOOST_LOG_TRIVIAL(trace) << "Loaded offsets: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
+            }
+        } else {
+            BOOST_LOG_TRIVIAL(debug) << "Empty file: " << name << std::endl;
+        }
         stateFile.close();
     }
 }
@@ -91,7 +104,7 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
     std::streamoff lastHeaderPos = 0;   // Position in the header file
 
     // Load the previous state (if any)
-    loadState(lastHeaderPos, lastPayloadPos);
+    loadState(id, lastHeaderPos, lastPayloadPos);
 
     // Open both files and keep them open
     std::ifstream payloadStream(payloadFile, std::ios::binary | std::ios::in);
@@ -120,10 +133,17 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
                 std::string line;
                 while (std::getline(headerStream, line)) {
                     std::vector<std::string> data = split(line, ',');
+
                     if (data.size() != 10) {
-                        BOOST_LOG_TRIVIAL(info) << "Header not yet ready: " << line << " (" << headerFile << ")" << std::endl;
+                        BOOST_LOG_TRIVIAL(info) << "Header not ready? " << line << " (" << headerFile << ")" << std::endl;
                         break; // try again later
                     }
+
+                    auto inputSize = static_cast<std::streamsize>(std::stoul(data[7]));
+                    auto outputSize = static_cast<std::streamsize>(std::stoul(data[8]));
+                    auto offset = static_cast<std::streamoff>(std::stoul(data[9]));
+
+                    /*
                     std::string header;
                     header += std::to_string(++counter);
                     header += ": ";
@@ -133,27 +153,23 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
                         header += " | ";
                     }
 
-                    auto inputSize = static_cast<std::streamsize>(std::stoul(data[7]));
                     header += std::to_string(inputSize);
                     header += " | ";
-                    auto outputSize = static_cast<std::streamsize>(std::stoul(data[8]));
                     header += std::to_string(outputSize);
                     header += " | ";
-                    auto offset = static_cast<std::streamoff>(std::stoul(data[9]));
                     header += std::to_string(offset);
 
                     BOOST_LOG_TRIVIAL(trace) << header << std::endl;
+                    */
 
                     // Check if the corresponding payload data is fully written
                     std::streamoff expectedPayloadSize = offset + inputSize + outputSize;
 
                     // Get the current payload file size
                     if (getFileSize(payloadFile) >= expectedPayloadSize) {
-                        // Payload data is complete, now read and process it
-
-                        // Seek to the last read position in the payload file
-                        payloadStream.clear(); // Clear EOF flag if set
-                        payloadStream.seekg(offset);  // Move to the payload offset
+                        // Payload data is available. Seek to the last read position in the payload file
+                        payloadStream.clear(); // clears EOF flag if set
+                        payloadStream.seekg(offset);
 
                         // Read input and output from the payload file
                         std::vector<char> inputBuffer(inputSize);
@@ -167,10 +183,10 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
 
                         // Update the last read position in both the header and payload files
                         lastPayloadPos = expectedPayloadSize;
-                        lastHeaderPos = headerStream.tellg(); // Current position in header file
+                        lastHeaderPos = headerStream.tellg();
 
                         // Persist the current read positions
-                        saveState(lastHeaderPos, lastPayloadPos);
+                        saveState(id, lastHeaderPos, lastPayloadPos);
 
                     } else {
                         break; // try again later
@@ -181,11 +197,12 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
             BOOST_LOG_TRIVIAL(error) << "Error: " << e.what() << std::endl;
             throw;
         }
-        BOOST_LOG_TRIVIAL(trace) << "File processed: " << headerFile << std::endl;
+        // BOOST_LOG_TRIVIAL(trace) << "Waiting for " << headerFile << std::endl;
 
         // Sleep before polling again to avoid busy waiting
-        sleep(10); // seconds!
+        sleep(5); // seconds!
 
+        /*
         // Handle file rotation: Check if files have been rotated
         if (getFileSize(payloadFile) == -1 || getFileSize(headerFile) == -1) {
             // Reopen files after rotation or if an error occurs
@@ -204,6 +221,7 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
             payloadStream.seekg(lastPayloadPos);
             headerStream.seekg(lastHeaderPos);
         }
+        */
     }
 
     // Close the file streams when done (in case of graceful shutdown)

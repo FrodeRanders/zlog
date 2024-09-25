@@ -30,7 +30,7 @@ void randomDelay(int minMs, int maxMs) {
 }
 
 // Simulate writing entries into header/payload paired files for a given date
-void generateTestDataForDay(const std::string& baseDir, std::tm* dateTm, unsigned int numFilePairs, unsigned int numberEntries) {
+void generateTestDataForDay(const std::string& basePath, std::tm* dateTm, unsigned int numFilePairs, unsigned int numberEntries) {
     std::cout << "Starting test data generation for day: " << (1900 + dateTm->tm_year)
               << "/" << (dateTm->tm_mon + 1) << "/" << dateTm->tm_mday << " " << std::flush;
 
@@ -38,7 +38,7 @@ void generateTestDataForDay(const std::string& baseDir, std::tm* dateTm, unsigne
     std::string inputString = "InputInputInputInputInputInputInputInputInputInputInput";
     std::string outputString = "OutputOutputOutputOutputOutputOutputOutputOutputOutputOutputOutputOutputOutputOutput";
 
-    std::string dirPath = getDateDirectory(baseDir, dateTm);
+    std::string dirPath = getDateDirectory(basePath, dateTm);
 
     // Create the directory structure if it doesn't exist
     if (!fs::exists(dirPath)) {
@@ -68,14 +68,14 @@ void generateTestDataForDay(const std::string& baseDir, std::tm* dateTm, unsigne
 
         // Generate header entry
         std::string headerLine;
-        headerLine += fruits[entryIndex % fruits.size()] + ",";  // Fruit name (hardcoded value)
-        headerLine += fruits[(entryIndex + 1) % fruits.size()] + ",";  // Another fruit (hardcoded)
-        headerLine += "Potato,Turnip,Carrot,";  // Some hardcoded values for good measure
-        headerLine += fruits[(entryIndex + 2) % fruits.size()] + ",";  // More fruit names
-        headerLine += fruits[(entryIndex + 3) % fruits.size()] + ",";  // Yet another fruit
-        headerLine += std::to_string(inputString.size()) + ",";  // Size of input string
-        headerLine += std::to_string(outputString.size()) + ",";  // Size of output string
-        headerLine += std::to_string(currentOffset[fileIndex]) + "\n";  // Offset into payload file
+        headerLine += fruits[entryIndex % fruits.size()] + ",";
+        headerLine += fruits[(entryIndex + 1) % fruits.size()] + ",";
+        headerLine += "Potato,Turnip,Carrot,";
+        headerLine += fruits[(entryIndex + 2) % fruits.size()] + ",";
+        headerLine += fruits[(entryIndex + 3) % fruits.size()] + ",";
+        headerLine += std::to_string(inputString.size()) + ",";
+        headerLine += std::to_string(outputString.size()) + ",";
+        headerLine += std::to_string(currentOffset[fileIndex]) + "\n";
         headerFiles[fileIndex] << headerLine;
 
         // Generate payload data
@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
         }
 
         unsigned int idx = 1;
-        std::string baseDir = argv[idx++];
+        std::string basePath = argv[idx++];
 
         unsigned int numberOfDays = std::stoul(argv[idx++]);
         if (numberOfDays == 0) {
@@ -148,7 +148,7 @@ int main(int argc, char* argv[]) {
 
         // Simulate writing data for the specified number of days
         for (int day = 0; day < numberOfDays; ++day) {
-            generateTestDataForDay(baseDir, &dateTm, numberOfFilePairs, numberOfEntries);
+            generateTestDataForDay(basePath, &dateTm, numberOfFilePairs, numberOfEntries);
             incrementDate(&dateTm);  // Move to the next day
         }
     }

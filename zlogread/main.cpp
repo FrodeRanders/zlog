@@ -35,7 +35,7 @@ namespace keywords = boost::log::keywords;
 
 
 // Function to list and pair files with ".header" and ".payload" suffixes
-std::map<std::string, std::pair<fs::path, fs::path>> findFilePairs(const std::string& dirPath) {
+static std::map<std::string, std::pair<fs::path, fs::path>> findFilePairs(const std::string& dirPath) {
     std::map<std::string, std::pair<fs::path, fs::path>> filePairs;
 
     if (fs::exists(dirPath) && fs::is_directory(dirPath)) {
@@ -71,23 +71,23 @@ std::map<std::string, std::pair<fs::path, fs::path>> findFilePairs(const std::st
 }
 
 // Function to simulate detecting if the day has rolled over
-bool detectDayRollover(const std::string& currentDayPath) {
+static bool detectDayRollover(const std::string& currentPath) {
     std::time_t now = std::time(nullptr);
     std::tm* nowTm = std::localtime(&now);
 
     // Format the current date directory (e.g., /year/month/day)
     std::string nextDayPath = std::to_string(1900 + nowTm->tm_year) + "/" +
-                              std::to_string(nowTm->tm_mon + 1) + "/" +
-                              std::to_string(nowTm->tm_mday);
+                              std::to_string(nowTm->tm_mon) + "/" +
+                              std::to_string(nowTm->tm_mday + 1);
 
-    return (currentDayPath != nextDayPath);
+    return (currentPath != nextDayPath);
 }
 
-std::string getCurrentPath(const std::string& baseDir) {
+static std::string getCurrentPath(const std::string& basePath) {
     std::time_t now = std::time(nullptr);
     std::tm* nowTm = std::localtime(&now);
 
-    std::string path = baseDir + "/" +
+    std::string path = basePath + "/" +
         std::to_string(1900 + nowTm->tm_year) + "/" +
         std::to_string(nowTm->tm_mon + 1) + "/" +
         std::to_string(nowTm->tm_mday);
@@ -96,7 +96,7 @@ std::string getCurrentPath(const std::string& baseDir) {
 }
 
 // Function to process files and monitor rollover
-void monitorDirectoryAndProcess(const fs::path& myself, const std::string& baseDir) {
+void monitorDirectoryAndProcess(const fs::path& myself, const std::string& basePath) {
     // Set up file logging
     logging::add_file_log(
         keywords::file_name = "monitor_%N.log",
@@ -115,7 +115,7 @@ void monitorDirectoryAndProcess(const fs::path& myself, const std::string& baseD
     std::string executable = myself.filename().string();
 
     // Start at current day
-    std::string currentPath = getCurrentPath(baseDir);
+    std::string currentPath = getCurrentPath(basePath);
 
     while (true) {
         BOOST_LOG_TRIVIAL(info) << "Monitoring directory: " << currentPath << std::endl;
@@ -167,15 +167,17 @@ void monitorDirectoryAndProcess(const fs::path& myself, const std::string& baseD
 
         // Check if we have rolled over to the next day
         if (detectDayRollover(currentPath)) {
-            currentPath = getCurrentPath(baseDir);
+            currentPath = getCurrentPath(basePath);
             BOOST_LOG_TRIVIAL(info) << "Detected day rollover. Switching to new directory: " << currentPath << std::endl;
         }
     }
 }
 
+// Forward declarations
 int processPair(unsigned long id, const std::string& headerFile, const std::string& payloadFile);
 void printStackTrace();
 
+//
 int main(int argc, char* argv[]) {
     try {
         if (argc < 2) {
