@@ -1,6 +1,10 @@
 .idea/
 .cmake/
+test/
 *.log
+*.state
+.ninja_deps
+.ninja_log
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
