@@ -46,9 +46,12 @@ static std::streamoff getFileSize(const std::string& path) {
 }
 
 // Utility function to save the current state (last read positions)
-static void saveState(unsigned long id, std::streamoff lastHeaderPos, std::streamoff lastPayloadPos) {
+static void saveState(const fs::path path, unsigned long id, std::streamoff lastHeaderPos, std::streamoff lastPayloadPos) {
     std::string name = "processor-" + std::to_string(id) + ".state";
-    std::ofstream stateStream(name, std::ios::binary | std::ios::out | std::ios::trunc);
+    fs::path statePath = path;
+    statePath /= name;
+
+    std::ofstream stateStream(statePath.string(), std::ios::binary | std::ios::out | std::ios::trunc);
     if (stateStream) {
         stateStream << std::to_string(lastHeaderPos) << "," << std::to_string(lastPayloadPos) << std::endl;
         stateStream.close();
@@ -57,9 +60,12 @@ static void saveState(unsigned long id, std::streamoff lastHeaderPos, std::strea
 }
 
 // Utility function to load the saved state (last read positions)
-static void loadState(unsigned long id, std::streamoff &lastHeaderPos, std::streamoff &lastPayloadPos) {
+static void loadState(const fs::path path, unsigned long id, std::streamoff &lastHeaderPos, std::streamoff &lastPayloadPos) {
     std::string name = "processor-" + std::to_string(id) + ".state";
-    std::ifstream stateFile(name, std::ios::binary | std::ios::in);
+    fs::path statePath = path;
+    statePath /= name;
+
+    std::ifstream stateFile(statePath.string(), std::ios::binary | std::ios::in);
     if (stateFile) {
         std::string line;
         if (std::getline(stateFile, line)) {
@@ -103,8 +109,11 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
     std::streamoff lastPayloadPos = 0;  // Position in the payload file
     std::streamoff lastHeaderPos = 0;   // Position in the header file
 
+    fs::path headerPath = headerFile;
+    fs::path statePath = headerPath.parent_path();
+
     // Load the previous state (if any)
-    loadState(id, lastHeaderPos, lastPayloadPos);
+    loadState(statePath, id, lastHeaderPos, lastPayloadPos);
 
     // Open both files and keep them open
     std::ifstream payloadStream(payloadFile, std::ios::binary | std::ios::in);
@@ -186,7 +195,7 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
                         lastHeaderPos = headerStream.tellg();
 
                         // Persist the current read positions
-                        saveState(id, lastHeaderPos, lastPayloadPos);
+                        saveState(statePath, id, lastHeaderPos, lastPayloadPos);
 
                     } else {
                         break; // try again later
