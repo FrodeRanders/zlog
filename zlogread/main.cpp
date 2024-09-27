@@ -156,9 +156,13 @@ void monitorDirectoryAndProcess(const fs::path& myself, const std::string& baseP
             }
 
             // Wait for all child processes to finish
-            for (auto& child : children) {
-                child->wait();
-                BOOST_LOG_TRIVIAL(info) << "Header and payload processor finished with exit code: " << child->exit_code() << std::endl;
+             while (children.size() > 0) {
+                for (auto& child : children) {
+                    if (!child->running()) {
+                        BOOST_LOG_TRIVIAL(info) << "Header and payload processor finished with exit code: " << child->exit_code() << std::endl;
+                   }
+                }
+                sleep(1);
             }
         }
 
