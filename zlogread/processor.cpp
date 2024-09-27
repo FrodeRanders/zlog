@@ -56,7 +56,7 @@ static void saveState(const fs::path path, unsigned long id, std::streamoff last
         stateStream << std::to_string(lastHeaderPos) << "," << std::to_string(lastPayloadPos) << std::endl;
         stateStream.close();
     }
-    BOOST_LOG_TRIVIAL(trace) << "Saved offsets: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
+    BOOST_LOG_TRIVIAL(trace) << "Saved offsets[" << id <<"]: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
 }
 
 // Utility function to load the saved state (last read positions)
@@ -75,7 +75,7 @@ static void loadState(const fs::path path, unsigned long id, std::streamoff &las
             } else {
                 lastHeaderPos = static_cast<std::streamoff>(std::stoul(data[0]));
                 lastPayloadPos = static_cast<std::streamoff>(std::stoul(data[1]));
-                BOOST_LOG_TRIVIAL(trace) << "Loaded offsets: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
+                BOOST_LOG_TRIVIAL(trace) << "Loaded offsets[" << id <<"]: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
             }
         } else {
             BOOST_LOG_TRIVIAL(debug) << "Empty file: " << name << std::endl;
@@ -86,8 +86,18 @@ static void loadState(const fs::path path, unsigned long id, std::streamoff &las
 
 // Simulate processing input/output data
 static void processInputOutput(const std::vector<char>& input, const std::vector<char>& output) {
-    BOOST_LOG_TRIVIAL(debug) << "Processing Input: " << std::string(input.begin(), input.end()) << std::endl;
-    BOOST_LOG_TRIVIAL(debug) << "Processing Output: " << std::string(output.begin(), output.end()) << std::endl;
+    std::string _input = std::string(input.begin(), input.end());
+    std::string _output = std::string(output.begin(), output.end());
+
+    if (!_input.starts_with("Input") && _input.ends_with("Input")) {
+        BOOST_LOG_TRIVIAL(error) << "Corrupt Input: " << _input << std::endl;
+        throw std::underflow_error("Corrupt Input: " + _input);
+    }
+
+    if (!_output.starts_with("Output") && _output.ends_with("Output")) {
+        BOOST_LOG_TRIVIAL(error) << "Corrupt Output: " << _output << std::endl;
+        throw std::underflow_error("Corrupt Output: " + _output);
+    }
 }
 
 int processPair(unsigned long id, const std::string& headerFile, const std::string& payloadFile) {
@@ -209,7 +219,7 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
         // BOOST_LOG_TRIVIAL(trace) << "Waiting for " << headerFile << std::endl;
 
         // Sleep before polling again to avoid busy waiting
-        sleep(5); // seconds!
+        sleep(1); // seconds!
 
         /*
         // Handle file rotation: Check if files have been rotated

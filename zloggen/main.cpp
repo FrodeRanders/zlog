@@ -60,6 +60,9 @@ void generateTestDataForDay(const std::string& basePath, std::tm* dateTm, unsign
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> fileSelector(0, static_cast<signed>(numFilePairs) - 1);
 
+    std::uniform_int_distribution<> delayedHeaderWrite(0, 100);
+
+
     // Write entries into the files
     std::vector<std::streamoff> currentOffset(numFilePairs, 0);
 
@@ -70,9 +73,22 @@ void generateTestDataForDay(const std::string& basePath, std::tm* dateTm, unsign
         std::string headerLine;
         headerLine += fruits[entryIndex % fruits.size()] + ",";
         headerLine += fruits[(entryIndex + 1) % fruits.size()] + ",";
-        headerLine += "Potato,Turnip,Carrot,";
+        headerLine += "Potato,,Carrot,";
         headerLine += fruits[(entryIndex + 2) % fruits.size()] + ",";
-        headerLine += fruits[(entryIndex + 3) % fruits.size()] + ",";
+
+        if (delayedHeaderWrite(gen) > 10) {
+            // No flush
+            headerLine += fruits[(entryIndex + 3) % fruits.size()] + ",";
+
+        } else {
+            // Simulate (on the client side) reading half written headers
+            // partial write of header entry
+            headerFiles[fileIndex] << headerLine << std::flush;
+            randomDelay(1, 100);
+
+            headerLine = fruits[(entryIndex + 3) % fruits.size()] + ",";
+        }
+
         headerLine += std::to_string(inputString.size()) + ",";
         headerLine += std::to_string(outputString.size()) + ",";
         headerLine += std::to_string(currentOffset[fileIndex]) + "\n";
