@@ -19,12 +19,20 @@
 #include <boost/log/sources/logger.hpp>
 #include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/utility/setup/console.hpp>
-#include <boost/log/attributes/timer.hpp>
 #include <boost/log/attributes/named_scope.hpp>
 
 namespace fs = boost::filesystem;
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
+
+// Forward declarations
+std::string tmToString(const std::tm*const timeStruct, const std::string& format);
+std::tm stringToTm(const std::string& timeString, const std::string& format);
+std::tm* today();
+bool differsFromToday(const std::tm*const &then);
+std::string getDatePath(std::tm* today);
+
+
 
 static std::vector<std::string> split(const std::string& line, char delimiter) {
     std::vector<std::string> result;
@@ -100,7 +108,13 @@ static void processInputOutput(const std::vector<char>& input, const std::vector
     }
 }
 
-int processPair(unsigned long id, const std::string& headerFile, const std::string& payloadFile) {
+int process(
+    int id,
+    const std::string& baseDir,
+    const std::string& dateStr,
+    const std::string& headerFile,
+    const std::string& payloadFile
+ ) {
     std::string logFileName = "processor_";
     logFileName += std::to_string(id);
     logFileName += "_%N.log";
@@ -119,34 +133,45 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
     std::streamoff lastPayloadPos = 0;  // Position in the payload file
     std::streamoff lastHeaderPos = 0;   // Position in the header file
 
-    fs::path headerPath = headerFile;
+    std::tm initialDate = stringToTm(dateStr, "%Y-%m-%d");
+    std::tm* date = &initialDate;
+
+    fs::path headerPath = baseDir;
+    headerPath /= getDatePath(date);
+    headerPath /= headerFile;
+
+    fs::path payloadPath = baseDir;
+    payloadPath /= getDatePath(date);
+    payloadPath /= payloadFile;
+
     fs::path statePath = headerPath.parent_path();
 
     // Load the previous state (if any)
     loadState(statePath, id, lastHeaderPos, lastPayloadPos);
 
+    BOOST_LOG_TRIVIAL(info) << "Processor #" << id << " starting at position " << lastHeaderPos << " in " << headerPath.string() << std::endl;
+
     // Open both files and keep them open
-    std::ifstream payloadStream(payloadFile, std::ios::binary | std::ios::in);
-    std::ifstream headerStream(headerFile, std::ios::binary | std::ios::in);
-    unsigned long counter = 0L;
+    std::ifstream payloadStream(payloadPath.string(), std::ios::binary | std::ios::in);
+    std::ifstream headerStream(headerPath.string(), std::ios::binary | std::ios::in);
 
     // Check for file open errors
     if (!payloadStream.is_open()) {
         BOOST_LOG_TRIVIAL(error) << "Error opening payload file: " << strerror(errno) << std::endl;
-        return 1;
+        return 0; // signalling an error in this context
     }
 
     if (!headerStream.is_open()) {
         BOOST_LOG_TRIVIAL(error) << "Error opening header file: " << strerror(errno) << std::endl;
-        return 1;
+        return 0; // signalling an error in this context
     }
 
     while (true) {
         try {
             if (getFileSize(headerFile) > lastHeaderPos) {
-                // Seek to the last read position in the header file
-                headerStream.clear(); // Clear EOF flag if set
-                headerStream.seekg(lastHeaderPos); // Move to last read position in header
+                // Seek to the last known position in the header file
+                headerStream.clear(); // clears EOF flag if set
+                headerStream.seekg(lastHeaderPos);
 
                 // Read header entries
                 std::string line;
@@ -154,32 +179,13 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
                     std::vector<std::string> data = split(line, ',');
 
                     if (data.size() != 10) {
-                        BOOST_LOG_TRIVIAL(info) << "Header not ready? " << line << " (" << headerFile << ")" << std::endl;
+                        BOOST_LOG_TRIVIAL(info) << "Header not ready: " << headerFile << std::endl;
                         break; // try again later
                     }
 
                     auto inputSize = static_cast<std::streamsize>(std::stoul(data[7]));
                     auto outputSize = static_cast<std::streamsize>(std::stoul(data[8]));
                     auto offset = static_cast<std::streamoff>(std::stoul(data[9]));
-
-                    /*
-                    std::string header;
-                    header += std::to_string(++counter);
-                    header += ": ";
-
-                    for (int i = 0; i < 7; ++i) {
-                        header += data[i];
-                        header += " | ";
-                    }
-
-                    header += std::to_string(inputSize);
-                    header += " | ";
-                    header += std::to_string(outputSize);
-                    header += " | ";
-                    header += std::to_string(offset);
-
-                    BOOST_LOG_TRIVIAL(trace) << header << std::endl;
-                    */
 
                     // Check if the corresponding payload data is fully written
                     std::streamoff expectedPayloadSize = offset + inputSize + outputSize;
@@ -214,38 +220,21 @@ int processPair(unsigned long id, const std::string& headerFile, const std::stri
             }
         } catch (const std::exception& e) {
             BOOST_LOG_TRIVIAL(error) << "Error: " << e.what() << std::endl;
+
             throw;
         }
-        // BOOST_LOG_TRIVIAL(trace) << "Waiting for " << headerFile << std::endl;
 
         // Sleep before polling again to avoid busy waiting
         sleep(1); // seconds!
 
-        /*
-        // Handle file rotation: Check if files have been rotated
-        if (getFileSize(payloadFile) == -1 || getFileSize(headerFile) == -1) {
-            // Reopen files after rotation or if an error occurs
+        // Check if we have rolled over to the next day
+        if (differsFromToday(date)) {
+            BOOST_LOG_TRIVIAL(info) << "Detected date rollover from " << tmToString(date, "%Y-%m-%d") << " to " << tmToString(today(), "%Y-%m-%d") << std::endl;
+
             payloadStream.close();
             headerStream.close();
 
-            payloadStream.open(payloadFile, std::ios::binary | std::ios::in);
-            headerStream.open(headerFile, std::ios::binary | std::ios::in);
-
-            if (!payloadStream.is_open() || !headerStream.is_open()) {
-                BOOST_LOG_TRIVIAL(error) << "Error reopening files after rotation: " << strerror(errno) << std::endl;
-                return 1; // Exit if reopening fails
-            }
-
-            // Reset file positions to the last known state
-            payloadStream.seekg(lastPayloadPos);
-            headerStream.seekg(lastHeaderPos);
+            return id;
         }
-        */
     }
-
-    // Close the file streams when done (in case of graceful shutdown)
-    payloadStream.close();
-    headerStream.close();
-
-    return 0;
 }

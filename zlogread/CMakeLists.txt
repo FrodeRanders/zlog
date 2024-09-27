@@ -16,6 +16,8 @@ add_executable(${TARGET_NAME}
         main.cpp
         processor.cpp
         stacktrace.cpp
+        utils.cpp
+        monitor.cpp
 )
 
 find_package(Boost 1.86 REQUIRED COMPONENTS
