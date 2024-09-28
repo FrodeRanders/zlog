@@ -25,6 +25,14 @@ std::tm stringToTm(const std::string& timeString, const std::string& format) {
     return timeStruct;
 }
 
+void increaseByOneDay(std::tm& date) {
+    // Increment day
+    date.tm_mday += 1;
+
+    // Normalize
+    std::mktime(&date);
+}
+
 std::tm* today() {
     std::time_t now = std::time(nullptr);
     return std::localtime(&now);

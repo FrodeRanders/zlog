@@ -2,16 +2,17 @@
 // Created by Frode Randers on 2024-09-28.
 //
 
-#include <boost/filesystem.hpp>
-#include <boost/process.hpp>
 #include <iostream>
-#include <vector>
 #include <string>
+#include <vector>
+#include <memory>
 #include <chrono>
 #include <ctime>
 #include <thread>
 
 #include <boost/log/core.hpp>
+#include <boost/process.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/expressions.hpp>
 #include <boost/log/sinks/text_file_backend.hpp>
@@ -20,7 +21,6 @@
 #include <boost/log/sources/logger.hpp>
 #include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/utility/setup/console.hpp>
-#include <boost/log/attributes/timer.hpp>
 #include <boost/log/attributes/named_scope.hpp>
 
 namespace fs = boost::filesystem;
@@ -35,7 +35,7 @@ std::tm* today();
 bool datesDiffer(const std::tm* t1, const std::tm* t2);
 bool differsFromToday(const std::tm*const &then);
 std::string getDatePath(std::tm* today);
-
+void increaseByOneDay(std::tm& date);
 
 // Function to list and pair files with ".header" and ".payload" suffixes
 static std::map<std::string, std::pair<fs::path, fs::path>> findFilePairs(const fs::path& dirPath) {
@@ -113,7 +113,7 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
         if (filePairs.empty()) {
             BOOST_LOG_TRIVIAL(error) << "No matching .header and .payload pairs found in directory: " << currentPath << std::endl;
         } else {
-            std::vector<std::shared_ptr<bp::child>> children;
+            std::vector<std::pair<std::shared_ptr<bp::child>, std::shared_ptr<bp::ipstream>>> children;
 
             // Launch a process for each pair of files
             unsigned int id = 0;
@@ -121,7 +121,10 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
                 const fs::path& headerFile = pair.second.first;
                 const fs::path& payloadFile = pair.second.second;
 
-                // Launch a new child process
+                // Pipe for capturing the stdout of the child process
+                auto pipe_stream = std::make_shared<bp::ipstream>();
+
+                // Launch a new child process with stdout redirected to pipe_stream
                 try {
                     std::shared_ptr<bp::child> child = std::make_shared<bp::child>(
                         bp::search_path(executable, location),
@@ -130,15 +133,17 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
                         basePath,
                         tmToString(date, "%Y-%m-%d"),
                         headerFile.filename().string(),
-                        payloadFile.filename().string());
+                        payloadFile.filename().string(),
+                        bp::std_out > *pipe_stream  // redirect stdout to pipe_stream
+                    );
 
                     BOOST_LOG_TRIVIAL(info)
-                    << "Processor #" << id << " handles "
+                    << "Processor #" << id << " (pid=" << child->id() << ") handles "
                     << headerFile.string() << " and "
                     << payloadFile.string()
                     << std::endl;
 
-                    children.push_back(child);
+                    children.emplace_back(child, pipe_stream);
                 }
                 catch (const boost::process::v1::process_error& e) {
                     BOOST_LOG_TRIVIAL(error) << "Failed to start processor: " << e.what() << std::endl;
@@ -148,16 +153,34 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
             // Wait for all child processes to finish
             while (!children.empty()) {
                 for (auto it = children.begin(); it != children.end();) {
-                    std::shared_ptr<bp::child> child = *it;
+                    std::shared_ptr<bp::child> child = it->first;
+                    std::shared_ptr<bp::ipstream> pipe_stream = it->second;
 
-                    if (!child->running()) {
-                        int exitCode = child->exit_code(); /* a.k.a. id of child process */
+                    if (child->running()) {
+                        std::string line;
+                        // Read from the child's stdout (non-blocking)
+                        if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
+                            BOOST_LOG_TRIVIAL(info) << "Processor pid=" << child->id() << " output: " << line;
+                        }
+                        ++it; // since we are iterating manually and need to accommodate the erase (below)
+                    } else {
+                        // Process has finished, capture the exit code
+                        child->wait();
+
+                        std::string line;
+                        // Read from the child's stdout (non-blocking)
+                        if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
+                            BOOST_LOG_TRIVIAL(info) << "Processor pid=" << child->id() << " output: " << line;
+                        }
+
+                        int exitCode = child->exit_code();
                         if (exitCode == 0) {
                             // OBSERVE!! This is reverse behaviour to normal!
                             BOOST_LOG_TRIVIAL(warning) << "A processor reports failure" << std::endl;
                         } else {
-                        BOOST_LOG_TRIVIAL(info) << "Processor #" << exitCode << " finished" << std::endl;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << exitCode << " (pid=" << child->id() << ") finished" << std::endl;
                         }
+
                         it = children.erase(it);
                     }
                 }
@@ -174,6 +197,9 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
                 BOOST_LOG_TRIVIAL(info) << "Detected day rollover. Switching to new directory: " << currentPath << std::endl;
             }
         } else {
+            increaseByOneDay(*date);
+            // if equal to today?
+
             return 0;
         }
     }

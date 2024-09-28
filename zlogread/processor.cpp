@@ -64,7 +64,7 @@ static void saveState(const fs::path path, unsigned long id, std::streamoff last
         stateStream << std::to_string(lastHeaderPos) << "," << std::to_string(lastPayloadPos) << std::endl;
         stateStream.close();
     }
-    BOOST_LOG_TRIVIAL(trace) << "Saved offsets[" << id <<"]: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
+    //BOOST_LOG_TRIVIAL(trace) << "Saved offsets[" << id <<"]: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
 }
 
 // Utility function to load the saved state (last read positions)
@@ -136,24 +136,23 @@ int process(
     std::tm initialDate = stringToTm(dateStr, "%Y-%m-%d");
     std::tm* date = &initialDate;
 
-    fs::path headerPath = baseDir;
-    headerPath /= getDatePath(date);
-    headerPath /= headerFile;
+    fs::path headerFilePath = baseDir;
+    headerFilePath /= getDatePath(date);
+    fs::path payloadFilePath = headerFilePath; // shared so far
+    fs::path stateDir = headerFilePath; // shared so far
 
-    fs::path payloadPath = baseDir;
-    payloadPath /= getDatePath(date);
-    payloadPath /= payloadFile;
+    headerFilePath /= headerFile; // unique
+    payloadFilePath /= payloadFile; // unique
 
-    fs::path statePath = headerPath.parent_path();
 
     // Load the previous state (if any)
-    loadState(statePath, id, lastHeaderPos, lastPayloadPos);
+    loadState(stateDir, id, lastHeaderPos, lastPayloadPos);
 
-    BOOST_LOG_TRIVIAL(info) << "Processor #" << id << " starting at position " << lastHeaderPos << " in " << headerPath.string() << std::endl;
+    BOOST_LOG_TRIVIAL(info) << "Processor #" << id << " starting at position " << lastHeaderPos << " in " << headerFilePath.string() << std::endl;
 
     // Open both files and keep them open
-    std::ifstream payloadStream(payloadPath.string(), std::ios::binary | std::ios::in);
-    std::ifstream headerStream(headerPath.string(), std::ios::binary | std::ios::in);
+    std::ifstream payloadStream(payloadFilePath.string(), std::ios::binary | std::ios::in);
+    std::ifstream headerStream(headerFilePath.string(), std::ios::binary | std::ios::in);
 
     // Check for file open errors
     if (!payloadStream.is_open()) {
@@ -166,9 +165,10 @@ int process(
         return 0; // signalling an error in this context
     }
 
+    unsigned long counter = 0L;
     while (true) {
         try {
-            if (getFileSize(headerFile) > lastHeaderPos) {
+            if (getFileSize(headerFilePath.string()) > lastHeaderPos) {
                 // Seek to the last known position in the header file
                 headerStream.clear(); // clears EOF flag if set
                 headerStream.seekg(lastHeaderPos);
@@ -176,6 +176,8 @@ int process(
                 // Read header entries
                 std::string line;
                 while (std::getline(headerStream, line)) {
+                    //BOOST_LOG_TRIVIAL(trace) << "Read: " << line << std::endl;
+
                     std::vector<std::string> data = split(line, ',');
 
                     if (data.size() != 10) {
@@ -191,7 +193,7 @@ int process(
                     std::streamoff expectedPayloadSize = offset + inputSize + outputSize;
 
                     // Get the current payload file size
-                    if (getFileSize(payloadFile) >= expectedPayloadSize) {
+                    if (getFileSize(payloadFilePath.string()) >= expectedPayloadSize) {
                         // Payload data is available. Seek to the last read position in the payload file
                         payloadStream.clear(); // clears EOF flag if set
                         payloadStream.seekg(offset);
@@ -205,13 +207,14 @@ int process(
 
                         // Process input/output
                         processInputOutput(inputBuffer, outputBuffer);
+                        counter++;
 
                         // Update the last read position in both the header and payload files
                         lastPayloadPos = expectedPayloadSize;
                         lastHeaderPos = headerStream.tellg();
 
                         // Persist the current read positions
-                        saveState(statePath, id, lastHeaderPos, lastPayloadPos);
+                        saveState(stateDir, id, lastHeaderPos, lastPayloadPos);
 
                     } else {
                         break; // try again later
@@ -234,6 +237,7 @@ int process(
             payloadStream.close();
             headerStream.close();
 
+            std::cout << "Processed " << counter << " entries" << std::endl;
             return id;
         }
     }
