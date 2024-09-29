@@ -6,7 +6,7 @@
 #include <execinfo.h>
 #include <cstdlib>
 
-void printStackTrace() {
+void print_stacktrace() {
     const int max_frames = 100;
     void* addrlist[max_frames + 1];
 

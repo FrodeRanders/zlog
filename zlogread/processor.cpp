@@ -26,11 +26,11 @@ namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
 
 // Forward declarations
-std::string tmToString(const std::tm*const timeStruct, const std::string& format);
-std::tm stringToTm(const std::string& timeString, const std::string& format);
+std::string tm_to_string(const std::tm*const timeStruct, const std::string& format);
+std::tm string_to_tm(const std::string& timeString, const std::string& format);
 std::tm* today();
-bool differsFromToday(const std::tm*const &then);
-std::string getDatePath(std::tm* today);
+bool differs_from_today(const std::tm*const &then);
+std::string get_date_path(std::tm* today);
 
 
 
@@ -47,14 +47,14 @@ static std::vector<std::string> split(const std::string& line, char delimiter) {
 }
 
 // Utility function to get file size
-static std::streamoff getFileSize(const std::string& path) {
+static std::streamoff get_filesize(const std::string& path) {
     struct stat stat_buf;
     int rc = stat(path.c_str(), &stat_buf);
     return rc == 0 ? stat_buf.st_size : -1;
 }
 
 // Utility function to save the current state (last read positions)
-static void saveState(const fs::path path, unsigned long id, std::streamoff lastHeaderPos, std::streamoff lastPayloadPos) {
+static void save_state(const fs::path path, unsigned long id, std::streamoff lastHeaderPos, std::streamoff lastPayloadPos) {
     std::string name = "processor-" + std::to_string(id) + ".state";
     fs::path statePath = path;
     statePath /= name;
@@ -68,7 +68,7 @@ static void saveState(const fs::path path, unsigned long id, std::streamoff last
 }
 
 // Utility function to load the saved state (last read positions)
-static void loadState(const fs::path path, unsigned long id, std::streamoff &lastHeaderPos, std::streamoff &lastPayloadPos) {
+static void load_state(const fs::path path, unsigned long id, std::streamoff &lastHeaderPos, std::streamoff &lastPayloadPos) {
     std::string name = "processor-" + std::to_string(id) + ".state";
     fs::path statePath = path;
     statePath /= name;
@@ -92,8 +92,7 @@ static void loadState(const fs::path path, unsigned long id, std::streamoff &las
     }
 }
 
-// Simulate processing input/output data
-static void processInputOutput(const std::vector<char>& input, const std::vector<char>& output) {
+static void process_payload(const std::vector<char>& input, const std::vector<char>& output) {
     std::string _input = std::string(input.begin(), input.end());
     std::string _output = std::string(output.begin(), output.end());
 
@@ -108,7 +107,7 @@ static void processInputOutput(const std::vector<char>& input, const std::vector
     }
 }
 
-int process(
+int process_header_and_payload(
     int shard,
     const std::string& baseDir,
     const std::string& dateStr,
@@ -133,11 +132,11 @@ int process(
     std::streamoff lastPayloadPos = 0;
     std::streamoff lastHeaderPos = 0;
 
-    std::tm initialDate = stringToTm(dateStr, "%Y-%m-%d");
+    std::tm initialDate = string_to_tm(dateStr, "%Y-%m-%d");
     std::tm* date = &initialDate;
 
     fs::path headerFilePath = baseDir;
-    headerFilePath /= getDatePath(date);
+    headerFilePath /= get_date_path(date);
     fs::path payloadFilePath = headerFilePath; // shared so far
     fs::path stateDir = headerFilePath; // shared so far
 
@@ -146,9 +145,10 @@ int process(
 
 
     // Load the previous state (if any)
-    loadState(stateDir, shard, lastHeaderPos, lastPayloadPos);
+    load_state(stateDir, shard, lastHeaderPos, lastPayloadPos);
 
     BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " starting at position " << lastHeaderPos << " in " << headerFilePath.string() << std::endl;
+
 
     // Open both files and keep them open
     std::ifstream payloadStream(payloadFilePath.string(), std::ios::binary | std::ios::in);
@@ -168,7 +168,7 @@ int process(
     unsigned long processedEntries = 0L;
     while (true) {
         try {
-            if (getFileSize(headerFilePath.string()) > lastHeaderPos) {
+            if (get_filesize(headerFilePath.string()) > lastHeaderPos) {
                 // Seek to the last known position in the header file
                 headerStream.clear(); // clears EOF flag if set
                 headerStream.seekg(lastHeaderPos);
@@ -192,7 +192,7 @@ int process(
                     std::streamoff expectedPayloadSize = offset + inputSize + outputSize;
 
                     // Get the current payload file size
-                    if (getFileSize(payloadFilePath.string()) >= expectedPayloadSize) {
+                    if (get_filesize(payloadFilePath.string()) >= expectedPayloadSize) {
                         // Payload data is available. Seek to the last read position in the payload file
                         payloadStream.clear(); // clears EOF flag if set
                         payloadStream.seekg(offset);
@@ -205,7 +205,7 @@ int process(
                         payloadStream.read(outputBuffer.data(), outputSize);
 
                         // Process input/output
-                        processInputOutput(inputBuffer, outputBuffer);
+                        process_payload(inputBuffer, outputBuffer);
                         processedEntries++;
 
                         // Update the last read position in both the header and payload files
@@ -213,7 +213,7 @@ int process(
                         lastHeaderPos = headerStream.tellg();
 
                         // Persist the current read positions
-                        saveState(stateDir, shard, lastHeaderPos, lastPayloadPos);
+                        save_state(stateDir, shard, lastHeaderPos, lastPayloadPos);
 
                     } else {
                         break; // try again later
@@ -234,9 +234,9 @@ int process(
         sleep(10); // seconds!
 
         // Check if we have rolled over to the next day
-        if (differsFromToday(date)) {
-            BOOST_LOG_TRIVIAL(info) << "I'm done, since I found entries for " << tmToString(today(), "%Y-%m-%d")
-            << " and I could not read more from " << tmToString(date, "%Y-%m-%d") << std::endl;
+        if (differs_from_today(date)) {
+            BOOST_LOG_TRIVIAL(info) << "I'm done, since I found entries for " << tm_to_string(today(), "%Y-%m-%d")
+            << " and I could not read more from " << tm_to_string(date, "%Y-%m-%d") << std::endl;
 
             payloadStream.close();
             headerStream.close();

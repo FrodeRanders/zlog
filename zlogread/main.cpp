@@ -11,9 +11,9 @@ namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
 
 // Forward declarations
-void printStackTrace();
-int process(int id, const std::string& baseDir, const std::string& date, const std::string& headerFile, const std::string& payloadFile);
-int monitor(const fs::path& myself, const std::string& basePath, const std::string& dateStr);
+void print_stacktrace();
+int process_header_and_payload(int id, const std::string& baseDir, const std::string& date, const std::string& headerFile, const std::string& payloadFile);
+int monitor_directory(const fs::path& myself, const std::string& basePath, const std::string& dateStr);
 
 
 //
@@ -32,14 +32,14 @@ int main(int argc, char* argv[]) {
 
         if (std::strcmp(argv[1], "-p") == 0 && argc == 7) {
             int id = std::stoi(argv[2]);
-            return process(id, argv[3], argv[4], argv[5], argv[6]);
+            return process_header_and_payload(id, argv[3], argv[4], argv[5], argv[6]);
         }
 
         std::string dateStr;
         if (argc >= 3) {
             dateStr = argv[2];
         }
-        return monitor(argv[0], argv[1], dateStr);
+        return monitor_directory(argv[0], argv[1], dateStr);
     }
     catch (const std::invalid_argument& ia) {
         std::cerr << "Invalid argument: " << ia.what() << std::endl;
