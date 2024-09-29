@@ -98,16 +98,14 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
         keywords::auto_flush = true  // Flush to file after each log message
     );
 
-    // Add common attributes, such as time stamps and process IDs
     logging::add_common_attributes();
-    BOOST_LOG_TRIVIAL(debug) << "Processor is: " << myself << std::endl;
 
-    // Extract the program's base name (without the directory part)
+    // Details for spawning child processes, later on
     std::vector<fs::path> location;
     location.push_back(myself.parent_path());
     std::string executable = myself.filename().string();
 
-    //
+    // Determine date of log files
     std::tm initialDate{};
     std::tm* date;
     if (dateStr.empty()) {
@@ -117,36 +115,33 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
         date = &initialDate;
     }
 
+    BOOST_LOG_TRIVIAL(debug) << "Will instantiate sub-processes using executable: " << myself << std::endl;
+
+    // Determine path to log files
     fs::path currentPath = basePath;
     currentPath /= getDatePath(date);
 
+    // Identify log files and spawn child processes for processing header and payload pairs
     while (true) {
         BOOST_LOG_TRIVIAL(info) << "Monitoring directory: " << currentPath << std::endl;
 
         // Find pairs of files in the current directory
-        auto logFiles = findFilePairs(currentPath);
-        if (logFiles.empty()) {
+        auto logUnits = findFilePairs(currentPath);
+        if (logUnits.empty()) {
             BOOST_LOG_TRIVIAL(error) << "No matching .header and .payload pairs found in directory: " << currentPath << std::endl;
         } else {
             std::vector<std::tuple<std::shared_ptr<bp::child>, std::shared_ptr<bp::ipstream>, unsigned int>> children;
 
             // Launch a process for each pair of files
             unsigned int shard = 0;
-            for (const auto& logFileEntry : logFiles) {
-                //
-                // 'logFileEntry' is pairs of stem and tuples from the 'logFiles' map.
-                // The tuple has elements:
-                //   0 std::string -- stem
-                //   1 fs::path    -- directory
-                //   2 std::string -- header filename
-                //   3 std::string -- payload filename
-                //
-                const std::string& stem = std::get<0>(logFileEntry.second);
-                const fs::path& path = std::get<1>(logFileEntry.second);
-                const std::string& headerFile = std::get<2>(logFileEntry.second);
-                const std::string& payloadFile = std::get<3>(logFileEntry.second);
+            for (const auto& logUnit : logUnits) {
+                // 'logUnit' is pairs of stem and tuples from the 'logUnits' map.
+                const std::string& stem = std::get<0>(logUnit.second);
+                const fs::path& path = std::get<1>(logUnit.second);
+                const std::string& headerFile = std::get<2>(logUnit.second);
+                const std::string& payloadFile = std::get<3>(logUnit.second);
 
-                // Pipe for capturing the stdout of the child process
+                // Pipe for capturing stdout of child process
                 auto pipe_stream = std::make_shared<bp::ipstream>();
 
                 // Launch a new child process with stdout redirected to pipe_stream
@@ -170,7 +165,7 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
                     << std::endl;
                 }
                 catch (const boost::process::v1::process_error& e) {
-                    BOOST_LOG_TRIVIAL(error) << "Failed to start processor: " << e.what() << std::endl;
+                    BOOST_LOG_TRIVIAL(error) << "Failed to spawn child process: " << e.what() << std::endl;
                 }
             }
 
@@ -179,30 +174,29 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
                 for (auto it = children.begin(); it != children.end();) {
                     std::shared_ptr<bp::child> child = std::get<0>(*it);
                     std::shared_ptr<bp::ipstream> pipe_stream = std::get<1>(*it);
-                    unsigned int shardId = std::get<2>(*it);
+                    unsigned int shard = std::get<2>(*it);
 
                     if (child->running()) {
                         std::string line;
                         // Read from the child's stdout (non-blocking)
                         if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor pid=" << child->id() << " output: " << line;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") output: " << line;
                         }
-                        ++it; // since we are iterating manually to accommodate the erase (below)
+                        ++it; // since we are iterating manually (to accommodate the erase (below))
                     } else {
-                        // Process has finished, capture the exit code
                         child->wait();
 
-                        std::string line;
                         // Read from the child's stdout (non-blocking)
+                        std::string line;
                         if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shardId << "(pid=" << child->id() << ") output: " << line;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << "(pid=" << child->id() << ") output: " << line;
                         }
 
                         int exitCode = child->exit_code();
                         if (exitCode == 0) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shardId << " (pid=" << child->id() << ") finished" << std::endl;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") finished" << std::endl;
                         } else {
-                            BOOST_LOG_TRIVIAL(warning) << "A processor reports failure" << std::endl;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports error: " << exitCode << std::endl;
                         }
 
                         it = children.erase(it);

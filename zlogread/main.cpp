@@ -47,7 +47,7 @@ int main(int argc, char* argv[]) {
     }
     catch (std::exception& e) {
         std::cerr << "Failed to process logs: " << e.what() << std::endl;
-        printStackTrace();
+        //printStackTrace();
         return 3;
     }
 }

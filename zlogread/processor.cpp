@@ -98,13 +98,13 @@ static void processInputOutput(const std::vector<char>& input, const std::vector
     std::string _output = std::string(output.begin(), output.end());
 
     if (!_input.starts_with("Input") && _input.ends_with("Input")) {
-        BOOST_LOG_TRIVIAL(error) << "Corrupt Input: " << _input << std::endl;
-        throw std::underflow_error("Corrupt Input: " + _input);
+        BOOST_LOG_TRIVIAL(error) << "Corrupt input: " << _input << std::endl;
+        throw std::underflow_error("Corrupt input: " + _input);
     }
 
     if (!_output.starts_with("Output") && _output.ends_with("Output")) {
-        BOOST_LOG_TRIVIAL(error) << "Corrupt Output: " << _output << std::endl;
-        throw std::underflow_error("Corrupt Output: " + _output);
+        BOOST_LOG_TRIVIAL(error) << "Corrupt output: " << _output << std::endl;
+        throw std::underflow_error("Corrupt output: " + _output);
     }
 }
 
@@ -127,11 +127,11 @@ int process(
         keywords::auto_flush = true  // Flush to file after each log message
     );
 
-    // Add common attributes, such as time stamps and process IDs
     logging::add_common_attributes();
 
-    std::streamoff lastPayloadPos = 0;  // Position in the payload file
-    std::streamoff lastHeaderPos = 0;   // Position in the header file
+    //
+    std::streamoff lastPayloadPos = 0;
+    std::streamoff lastHeaderPos = 0;
 
     std::tm initialDate = stringToTm(dateStr, "%Y-%m-%d");
     std::tm* date = &initialDate;
@@ -177,7 +177,6 @@ int process(
                 std::string line;
                 while (std::getline(headerStream, line)) {
                     //BOOST_LOG_TRIVIAL(trace) << "Read: " << line << std::endl;
-
                     std::vector<std::string> data = split(line, ',');
 
                     if (data.size() != 10) {
@@ -222,17 +221,22 @@ int process(
                 }
             }
         } catch (const std::exception& e) {
-            BOOST_LOG_TRIVIAL(error) << "Error: " << e.what() << std::endl;
-
+            std::string info = "Aborting processing of ";
+            info += headerFilePath.string();
+            info += " and corresponding ";
+            info += payloadFilePath.string();
+            info += ": ";
+            info += e.what();
+            BOOST_LOG_TRIVIAL(error) << info << std::endl;
             throw;
         }
 
-        // Sleep before polling again to avoid busy waiting
         sleep(1); // seconds!
 
         // Check if we have rolled over to the next day
         if (differsFromToday(date)) {
-            BOOST_LOG_TRIVIAL(info) << "Detected date rollover from " << tmToString(date, "%Y-%m-%d") << " to " << tmToString(today(), "%Y-%m-%d") << std::endl;
+            BOOST_LOG_TRIVIAL(info) << "I'm done, since I found entries for " << tmToString(today(), "%Y-%m-%d")
+            << " and I could not read more from " << tmToString(date, "%Y-%m-%d") << std::endl;
 
             payloadStream.close();
             headerStream.close();

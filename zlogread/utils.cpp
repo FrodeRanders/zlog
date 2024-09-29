@@ -20,7 +20,8 @@ std::tm stringToTm(const std::string& timeString, const std::string& format) {
     std::istringstream iss(timeString);
     iss >> std::get_time(&timeStruct, format.c_str());
     if (iss.fail()) {
-        throw std::runtime_error("Failed to parse time string");
+        std::string info = "Failed to parse time string \"" + timeString + "\". Format should be: " + format;
+        throw std::runtime_error(info);
     }
     return timeStruct;
 }
