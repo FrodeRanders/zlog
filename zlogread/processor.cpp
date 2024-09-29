@@ -109,14 +109,14 @@ static void processInputOutput(const std::vector<char>& input, const std::vector
 }
 
 int process(
-    int id,
+    int shard,
     const std::string& baseDir,
     const std::string& dateStr,
     const std::string& headerFile,
     const std::string& payloadFile
  ) {
     std::string logFileName = "processor_";
-    logFileName += std::to_string(id);
+    logFileName += std::to_string(shard);
     logFileName += "_%N.log";
 
     // Set up file logging
@@ -146,9 +146,9 @@ int process(
 
 
     // Load the previous state (if any)
-    loadState(stateDir, id, lastHeaderPos, lastPayloadPos);
+    loadState(stateDir, shard, lastHeaderPos, lastPayloadPos);
 
-    BOOST_LOG_TRIVIAL(info) << "Processor #" << id << " starting at position " << lastHeaderPos << " in " << headerFilePath.string() << std::endl;
+    BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " starting at position " << lastHeaderPos << " in " << headerFilePath.string() << std::endl;
 
     // Open both files and keep them open
     std::ifstream payloadStream(payloadFilePath.string(), std::ios::binary | std::ios::in);
@@ -157,15 +157,15 @@ int process(
     // Check for file open errors
     if (!payloadStream.is_open()) {
         BOOST_LOG_TRIVIAL(error) << "Error opening payload file: " << strerror(errno) << std::endl;
-        return 0; // signalling an error in this context
+        return 4;
     }
 
     if (!headerStream.is_open()) {
         BOOST_LOG_TRIVIAL(error) << "Error opening header file: " << strerror(errno) << std::endl;
-        return 0; // signalling an error in this context
+        return 5;
     }
 
-    unsigned long counter = 0L;
+    unsigned long processedEntries = 0L;
     while (true) {
         try {
             if (getFileSize(headerFilePath.string()) > lastHeaderPos) {
@@ -207,14 +207,14 @@ int process(
 
                         // Process input/output
                         processInputOutput(inputBuffer, outputBuffer);
-                        counter++;
+                        processedEntries++;
 
                         // Update the last read position in both the header and payload files
                         lastPayloadPos = expectedPayloadSize;
                         lastHeaderPos = headerStream.tellg();
 
                         // Persist the current read positions
-                        saveState(stateDir, id, lastHeaderPos, lastPayloadPos);
+                        saveState(stateDir, shard, lastHeaderPos, lastPayloadPos);
 
                     } else {
                         break; // try again later
@@ -237,8 +237,8 @@ int process(
             payloadStream.close();
             headerStream.close();
 
-            std::cout << "Processed " << counter << " entries" << std::endl;
-            return id;
+            std::cout << "Processed " << processedEntries << " entries" << std::endl;
+            return 0;
         }
     }
 }

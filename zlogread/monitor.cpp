@@ -22,6 +22,7 @@
 #include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/log/attributes/named_scope.hpp>
+#include <__filesystem/path.h>
 
 namespace fs = boost::filesystem;
 namespace logging = boost::log;
@@ -38,39 +39,53 @@ std::string getDatePath(std::tm* today);
 void increaseByOneDay(std::tm& date);
 
 // Function to list and pair files with ".header" and ".payload" suffixes
-static std::map<std::string, std::pair<fs::path, fs::path>> findFilePairs(const fs::path& dirPath) {
-    std::map<std::string, std::pair<fs::path, fs::path>> filePairs;
+static std::map<std::string, std::tuple<std::string, fs::path, std::string, std::string>> findFilePairs(const fs::path& dirPath) {
+    std::map<std::string /* stem */, std::tuple<std::string /* stem */, fs::path /* directory */, std::string /* header filename */, std::string /* payload filename */>> files;
 
     if (fs::exists(dirPath) && fs::is_directory(dirPath)) {
-        std::map<std::string, fs::path> headerFiles;
-        std::map<std::string, fs::path> payloadFiles;
+        std::map<std::string /* stem */ , fs::path /* directory path */> stems;
+        std::map<std::string /* stem */, std::string> headerFiles;
+        std::map<std::string /* stem */, std::string> payloadFiles;
 
         // Scan through directory and classify files by extension
         for (const auto& entry : fs::directory_iterator(dirPath)) {
             if (fs::is_regular_file(entry)) {
                 fs::path filePath = entry.path();
-                std::string filename = filePath.stem().string(); // File name without extension
 
+                //
+                std::string stem = filePath.stem().string();
+                fs::path basePath = filePath.parent_path();
+                stems[stem] = filePath;
+
+                //
                 if (filePath.extension() == ".header") {
-                    headerFiles[filename] = filePath;
+                    headerFiles[stem] = filePath.filename().string();
                 } else if (filePath.extension() == ".payload") {
-                    payloadFiles[filename] = filePath;
+                    payloadFiles[stem] = filePath.filename().string();
                 }
             }
         }
 
-        // Match .header and .payload pairs by filename
-        for (const auto& headerEntry : headerFiles) {
-            const std::string& baseName = headerEntry.first;
-            if (payloadFiles.find(baseName) != payloadFiles.end()) {
-                filePairs[baseName] = std::make_pair(headerEntry.second, payloadFiles[baseName]);
+        // Match .header and .payload pairs by stem
+        for (const auto& _stem : stems) {
+            const std::string stem = _stem.first;
+            const fs::path path = _stem.second;
+
+            if (headerFiles.find(stem) != headerFiles.end() &&
+                payloadFiles.find(stem) != payloadFiles.end()) {
+                // We have a pair of header and payload files
+
+                files[stem] = std::make_tuple(stem, path, headerFiles[stem], payloadFiles[stem]);
+
+            } else {
+                BOOST_LOG_TRIVIAL(error) << ".header and .payload files does not match for " << stem << std::endl;
             }
         }
     } else {
         BOOST_LOG_TRIVIAL(error) << "Directory does not exist or is not accessible: " << dirPath << std::endl;
     }
 
-    return filePairs;
+    return files;
 }
 
 // Function to process files and monitor rollover
@@ -109,17 +124,27 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
         BOOST_LOG_TRIVIAL(info) << "Monitoring directory: " << currentPath << std::endl;
 
         // Find pairs of files in the current directory
-        auto filePairs = findFilePairs(currentPath);
-        if (filePairs.empty()) {
+        auto logFiles = findFilePairs(currentPath);
+        if (logFiles.empty()) {
             BOOST_LOG_TRIVIAL(error) << "No matching .header and .payload pairs found in directory: " << currentPath << std::endl;
         } else {
-            std::vector<std::pair<std::shared_ptr<bp::child>, std::shared_ptr<bp::ipstream>>> children;
+            std::vector<std::tuple<std::shared_ptr<bp::child>, std::shared_ptr<bp::ipstream>, unsigned int>> children;
 
             // Launch a process for each pair of files
-            unsigned int id = 0;
-            for (const auto& pair : filePairs) {
-                const fs::path& headerFile = pair.second.first;
-                const fs::path& payloadFile = pair.second.second;
+            unsigned int shard = 0;
+            for (const auto& logFileEntry : logFiles) {
+                //
+                // 'logFileEntry' is pairs of stem and tuples from the 'logFiles' map.
+                // The tuple has elements:
+                //   0 std::string -- stem
+                //   1 fs::path    -- directory
+                //   2 std::string -- header filename
+                //   3 std::string -- payload filename
+                //
+                const std::string& stem = std::get<0>(logFileEntry.second);
+                const fs::path& path = std::get<1>(logFileEntry.second);
+                const std::string& headerFile = std::get<2>(logFileEntry.second);
+                const std::string& payloadFile = std::get<3>(logFileEntry.second);
 
                 // Pipe for capturing the stdout of the child process
                 auto pipe_stream = std::make_shared<bp::ipstream>();
@@ -129,21 +154,20 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
                     std::shared_ptr<bp::child> child = std::make_shared<bp::child>(
                         bp::search_path(executable, location),
                         "-p",
-                        std::to_string(++id),
+                        std::to_string(++shard),
                         basePath,
                         tmToString(date, "%Y-%m-%d"),
-                        headerFile.filename().string(),
-                        payloadFile.filename().string(),
+                        headerFile,
+                        payloadFile,
                         bp::std_out > *pipe_stream  // redirect stdout to pipe_stream
                     );
+                    children.emplace_back(child, pipe_stream, shard);
 
                     BOOST_LOG_TRIVIAL(info)
-                    << "Processor #" << id << " (pid=" << child->id() << ") handles "
-                    << headerFile.string() << " and "
-                    << payloadFile.string()
+                    << "Processor #" << shard << " (pid=" << child->id() << ") handles "
+                    << headerFile << " and "
+                    << payloadFile
                     << std::endl;
-
-                    children.emplace_back(child, pipe_stream);
                 }
                 catch (const boost::process::v1::process_error& e) {
                     BOOST_LOG_TRIVIAL(error) << "Failed to start processor: " << e.what() << std::endl;
@@ -153,8 +177,9 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
             // Wait for all child processes to finish
             while (!children.empty()) {
                 for (auto it = children.begin(); it != children.end();) {
-                    std::shared_ptr<bp::child> child = it->first;
-                    std::shared_ptr<bp::ipstream> pipe_stream = it->second;
+                    std::shared_ptr<bp::child> child = std::get<0>(*it);
+                    std::shared_ptr<bp::ipstream> pipe_stream = std::get<1>(*it);
+                    unsigned int shardId = std::get<2>(*it);
 
                     if (child->running()) {
                         std::string line;
@@ -162,7 +187,7 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
                         if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
                             BOOST_LOG_TRIVIAL(info) << "Processor pid=" << child->id() << " output: " << line;
                         }
-                        ++it; // since we are iterating manually and need to accommodate the erase (below)
+                        ++it; // since we are iterating manually to accommodate the erase (below)
                     } else {
                         // Process has finished, capture the exit code
                         child->wait();
@@ -170,15 +195,14 @@ int monitor(const fs::path& myself, const std::string& basePath, const std::stri
                         std::string line;
                         // Read from the child's stdout (non-blocking)
                         if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor pid=" << child->id() << " output: " << line;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shardId << "(pid=" << child->id() << ") output: " << line;
                         }
 
                         int exitCode = child->exit_code();
                         if (exitCode == 0) {
-                            // OBSERVE!! This is reverse behaviour to normal!
-                            BOOST_LOG_TRIVIAL(warning) << "A processor reports failure" << std::endl;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shardId << " (pid=" << child->id() << ") finished" << std::endl;
                         } else {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << exitCode << " (pid=" << child->id() << ") finished" << std::endl;
+                            BOOST_LOG_TRIVIAL(warning) << "A processor reports failure" << std::endl;
                         }
 
                         it = children.erase(it);

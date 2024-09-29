@@ -43,11 +43,11 @@ int main(int argc, char* argv[]) {
     }
     catch (const std::invalid_argument& ia) {
         std::cerr << "Invalid argument: " << ia.what() << std::endl;
-        return 1;
+        return 2;
     }
     catch (std::exception& e) {
         std::cerr << "Failed to process logs: " << e.what() << std::endl;
         printStackTrace();
-        return 1;
+        return 3;
     }
 }
