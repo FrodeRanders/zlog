@@ -231,7 +231,7 @@ int process(
             throw;
         }
 
-        sleep(1); // seconds!
+        sleep(10); // seconds!
 
         // Check if we have rolled over to the next day
         if (differsFromToday(date)) {
@@ -243,6 +243,8 @@ int process(
 
             std::cout << "Processed " << processedEntries << " entries" << std::endl;
             return 0;
+        } else {
+            // BOOST_LOG_TRIVIAL(trace) << "Continuing..." << std::endl;
         }
     }
 }

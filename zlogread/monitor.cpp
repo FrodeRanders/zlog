@@ -51,6 +51,10 @@ static std::map<std::string, std::tuple<std::string, fs::path, std::string, std:
         for (const auto& entry : fs::directory_iterator(dirPath)) {
             if (fs::is_regular_file(entry)) {
                 fs::path filePath = entry.path();
+                if (filePath.extension() == ".state") {
+                    // Ignore state files!
+                    continue;
+                }
 
                 //
                 std::string stem = filePath.stem().string();

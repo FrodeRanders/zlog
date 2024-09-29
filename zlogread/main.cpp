@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
         }
 
         std::string dateStr;
-        if (argc < 4) {
+        if (argc >= 3) {
             dateStr = argv[2];
         }
         return monitor(argv[0], argv[1], dateStr);
