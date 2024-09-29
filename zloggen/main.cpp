@@ -30,7 +30,7 @@ void randomDelay(int minMs, int maxMs) {
 }
 
 // Simulate writing entries into header/payload paired files for a given date
-void generateTestDataForDay(const std::string& basePath, std::tm* dateTm, unsigned int numFilePairs, unsigned int numberEntries) {
+void generateTestDataForDay(const std::string& basePath, std::tm* dateTm, const unsigned int numFilePairs, const unsigned int numberEntries) {
     std::cout << "Starting test data generation for day: " << (1900 + dateTm->tm_year)
               << "/" << (dateTm->tm_mon + 1) << "/" << dateTm->tm_mday << " " << std::flush;
 
