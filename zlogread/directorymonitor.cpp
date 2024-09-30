@@ -206,7 +206,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                         std::string line;
                         // Read from the child's stdout (non-blocking)
                         if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports: " << line;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") is running and reports: " << line;
                         }
                         ++cit; // since we are iterating manually (to accommodate the erase (below))
                     } else {
@@ -215,7 +215,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                         // Read from the child's stdout (non-blocking)
                         std::string line;
                         if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << "(pid=" << child->id() << ") output: " << line;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") finished and reports: " << line;
                         }
 
                         int exitCode = child->exit_code();
@@ -247,7 +247,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                                 BOOST_LOG_TRIVIAL(error) << info << " -- Failed to locate unit among tracked units!" << std::endl;
                             }
                         } else if (exitCode == 0) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") finished" << std::endl;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") finished gracefully" << std::endl;
                         } else {
                             BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports error: " << exitCode << std::endl;
                         }

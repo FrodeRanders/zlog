@@ -248,8 +248,8 @@ int process_header_and_payload(
 
         // Check if we have rolled over to the next day
         if (differs_from_today(date)) {
-            BOOST_LOG_TRIVIAL(info) << "I'm done, since I found entries for " << tm_to_string(today(), "%Y-%m-%d")
-            << " and I could not read more from " << tm_to_string(date, "%Y-%m-%d") << std::endl;
+            BOOST_LOG_TRIVIAL(info) << "I'm done, since I detected date rollover to " << tm_to_string(today(), "%Y-%m-%d")
+            << " and I could not read more data from " << tm_to_string(date, "%Y-%m-%d") << std::endl;
 
             headerStream.close();
             payloadStream.close();
