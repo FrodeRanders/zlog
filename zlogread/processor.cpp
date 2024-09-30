@@ -9,6 +9,7 @@
 #include <vector>
 #include <cerrno>
 #include <cstring>    // For strerror
+#include <thread>
 
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
@@ -113,7 +114,7 @@ int process_header_and_payload(
     const std::string& dateStr,
     const std::string& headerFile,
     const std::string& payloadFile
- ) {
+) {
     std::string logFileName = "processor_";
     logFileName += std::to_string(shard);
     logFileName += "_%N.log";
@@ -121,6 +122,7 @@ int process_header_and_payload(
     // Set up file logging
     logging::add_file_log(
         keywords::file_name = logFileName,
+        keywords::open_mode = std::ios_base::app,    // Open in append mode
         keywords::rotation_size = 10 * 1024 * 1024,  // Rotate after 10 MB
         keywords::format = "[%TimeStamp%] [%Severity%] %Message%",
         keywords::auto_flush = true  // Flush to file after each log message
@@ -151,18 +153,29 @@ int process_header_and_payload(
 
 
     // Open both files and keep them open
-    std::ifstream payloadStream(payloadFilePath.string(), std::ios::binary | std::ios::in);
     std::ifstream headerStream(headerFilePath.string(), std::ios::binary | std::ios::in);
+    std::ifstream payloadStream(payloadFilePath.string(), std::ios::binary | std::ios::in);
+
+    if (!headerStream.is_open()) {
+        std::string info = "Error opening header file (";
+        info += strerror(errno);
+        info += "): " + headerFilePath.string();
+        BOOST_LOG_TRIVIAL(error) << info << std::endl;
+        std::cout << info << std::endl;
+
+        return 101;
+    }
 
     // Check for file open errors
     if (!payloadStream.is_open()) {
-        BOOST_LOG_TRIVIAL(error) << "Error opening payload file: " << strerror(errno) << std::endl;
-        return 4;
-    }
+        std::string info = "Error opening payload file (";
+        info += strerror(errno);
+        info += "): " + payloadFilePath.string();
+        BOOST_LOG_TRIVIAL(error) << info << std::endl;
+        std::cout << info << std::endl;
 
-    if (!headerStream.is_open()) {
-        BOOST_LOG_TRIVIAL(error) << "Error opening header file: " << strerror(errno) << std::endl;
-        return 5;
+        headerStream.close();
+        return 102;
     }
 
     unsigned long processedEntries = 0L;
@@ -231,15 +244,15 @@ int process_header_and_payload(
             throw;
         }
 
-        sleep(10); // seconds!
+        std::this_thread::sleep_for(std::chrono::seconds(10));
 
         // Check if we have rolled over to the next day
         if (differs_from_today(date)) {
             BOOST_LOG_TRIVIAL(info) << "I'm done, since I found entries for " << tm_to_string(today(), "%Y-%m-%d")
             << " and I could not read more from " << tm_to_string(date, "%Y-%m-%d") << std::endl;
 
-            payloadStream.close();
             headerStream.close();
+            payloadStream.close();
 
             std::cout << "Processed " << processedEntries << " entries" << std::endl;
             return 0;

@@ -22,7 +22,6 @@
 #include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/log/attributes/named_scope.hpp>
-#include <__filesystem/path.h>
 
 namespace fs = boost::filesystem;
 namespace logging = boost::log;
@@ -39,7 +38,13 @@ std::string get_date_path(std::tm* today);
 void proceed_to_next_day(std::tm& date);
 
 //
-typedef std::map<std::string, std::tuple<std::string, fs::path, std::string, std::string>> pair_map;
+typedef std::map<
+    std::string /* stem */,
+    std::tuple<std::string /* stem */,
+        fs::path /* directory */,
+        std::string /* header filename */,
+        std::string /* payload filename */>
+> pair_map;
 
 // Function to list and pair files with ".header" and ".payload" suffixes
 static pair_map find_pairs(const fs::path& dirPath, pair_map& existingFiles) {
@@ -107,6 +112,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
     // Set up file logging
     logging::add_file_log(
         keywords::file_name = "monitor_%N.log",
+        keywords::open_mode = std::ios_base::app,    // Open in append mode
         keywords::rotation_size = 10 * 1024 * 1024,  // Rotate after 10 MB
         keywords::format = "[%TimeStamp%] [%Severity%] %Message%",
         keywords::auto_flush = true  // Flush to file after each log message
@@ -146,59 +152,63 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
         if (untrackedUnits.empty()) {
             BOOST_LOG_TRIVIAL(error) << "No matching .header and .payload pairs found in directory: " << currentPath << std::endl;
         } else {
-            std::vector<std::tuple<std::shared_ptr<bp::child>, std::shared_ptr<bp::ipstream>, unsigned int>> children;
+            // Launch a child process for each pair of files
+            std::vector<
+                std::tuple<std::shared_ptr<bp::child>, std::shared_ptr<bp::ipstream>, unsigned int /* shard */, std::string /* stem */>
+            > children;
+            {
+                unsigned int shard = 0;
+                for (const auto& untrackedUnit : untrackedUnits) {
+                    // 'logUnit' is pairs of stem and tuples from the 'logUnits' map.
+                    const std::string& stem = std::get<0>(untrackedUnit.second);
+                    const fs::path& path = std::get<1>(untrackedUnit.second);
+                    const std::string& headerFile = std::get<2>(untrackedUnit.second);
+                    const std::string& payloadFile = std::get<3>(untrackedUnit.second);
 
-            // Launch a process for each pair of files
-            unsigned int shard = 0;
-            for (const auto& untrackedUnit : untrackedUnits) {
-                // 'logUnit' is pairs of stem and tuples from the 'logUnits' map.
-                const std::string& stem = std::get<0>(untrackedUnit.second);
-                const fs::path& path = std::get<1>(untrackedUnit.second);
-                const std::string& headerFile = std::get<2>(untrackedUnit.second);
-                const std::string& payloadFile = std::get<3>(untrackedUnit.second);
+                    // Pipe for capturing stdout of child process
+                    auto pipe_stream = std::make_shared<bp::ipstream>();
 
-                // Pipe for capturing stdout of child process
-                auto pipe_stream = std::make_shared<bp::ipstream>();
+                    // Launch a new child process with stdout redirected to pipe_stream
+                    try {
+                        std::shared_ptr<bp::child> child = std::make_shared<bp::child>(
+                            bp::search_path(executable, location),
+                            "-p",
+                            std::to_string(++shard),
+                            basePath,
+                            tm_to_string(date, "%Y-%m-%d"),
+                            headerFile,
+                            payloadFile,
+                            bp::std_out > *pipe_stream  // redirect stdout to pipe_stream
+                        );
+                        children.emplace_back(child, pipe_stream, shard, stem);
 
-                // Launch a new child process with stdout redirected to pipe_stream
-                try {
-                    std::shared_ptr<bp::child> child = std::make_shared<bp::child>(
-                        bp::search_path(executable, location),
-                        "-p",
-                        std::to_string(++shard),
-                        basePath,
-                        tm_to_string(date, "%Y-%m-%d"),
-                        headerFile,
-                        payloadFile,
-                        bp::std_out > *pipe_stream  // redirect stdout to pipe_stream
-                    );
-                    children.emplace_back(child, pipe_stream, shard);
-
-                    BOOST_LOG_TRIVIAL(info)
-                    << "Processor #" << shard << " (pid=" << child->id() << ") handles "
-                    << headerFile << " and "
-                    << payloadFile
-                    << std::endl;
-                }
-                catch (const boost::process::v1::process_error& e) {
-                    BOOST_LOG_TRIVIAL(error) << "Failed to spawn child process: " << e.what() << std::endl;
+                        BOOST_LOG_TRIVIAL(info)
+                        << "Processor #" << shard << " (pid=" << child->id() << ") handles "
+                        << headerFile << " and "
+                        << payloadFile
+                        << std::endl;
+                    }
+                    catch (const boost::process::v1::process_error& e) {
+                        BOOST_LOG_TRIVIAL(error) << "Failed to spawn child process: " << e.what() << std::endl;
+                    }
                 }
             }
 
             // Wait for all child processes to finish
             while (!children.empty()) {
-                for (auto it = children.begin(); it != children.end();) {
-                    std::shared_ptr<bp::child> child = std::get<0>(*it);
-                    std::shared_ptr<bp::ipstream> pipe_stream = std::get<1>(*it);
-                    unsigned int shard = std::get<2>(*it);
+                for (auto cit = children.begin(); cit != children.end();) {
+                    std::shared_ptr<bp::child> child = std::get<0>(*cit);
+                    std::shared_ptr<bp::ipstream> pipe_stream = std::get<1>(*cit);
+                    unsigned int shard = std::get<2>(*cit);
+                    std::string stem = std::get<3>(*cit);
 
                     if (child->running()) {
                         std::string line;
                         // Read from the child's stdout (non-blocking)
                         if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") output: " << line;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports: " << line;
                         }
-                        ++it; // since we are iterating manually (to accommodate the erase (below))
+                        ++cit; // since we are iterating manually (to accommodate the erase (below))
                     } else {
                         child->wait();
 
@@ -209,21 +219,49 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                         }
 
                         int exitCode = child->exit_code();
-                        if (exitCode == 0) {
+                        if (exitCode > 100) {
+                            // 101: Error opening header file
+                            // 102: Error opening payload file
+                            //
+                            std::string info = "Processor #";
+                            info += std::to_string(shard);
+                            info += " (pid=";
+                            info += std::to_string(child->id());
+                            info += ") could not load ";
+                            if (exitCode == 101) {
+                                info += "header file ";
+                                info += stem + ".header";
+                            } else {
+                                info += "payload file ";
+                                info += stem + ".payload";
+                            }
+
+                            // Remove this header and payload file pair from 'trackedUnits', and they will
+                            // be picked up again in a little while.
+                            //
+                            auto tuit = trackedUnits.find(stem);
+                            if (tuit != trackedUnits.end()) {
+                                trackedUnits.erase(tuit);
+                                BOOST_LOG_TRIVIAL(info) << info << " -- Retrying later" << std::endl;
+                            } else {
+                                BOOST_LOG_TRIVIAL(error) << info << " -- Failed to locate unit among tracked units!" << std::endl;
+                            }
+                        } else if (exitCode == 0) {
                             BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") finished" << std::endl;
                         } else {
                             BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports error: " << exitCode << std::endl;
                         }
 
-                        it = children.erase(it);
+                        cit = children.erase(cit);
                     }
                 }
-
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
 
         if (dateStr.empty()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
             // Check if we have rolled over to the next day
             if (differs_from_today(date)) {
                 BOOST_LOG_TRIVIAL(info) << "Detected day rollover" << std::endl;
@@ -238,22 +276,25 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                     const std::string& payloadFile = std::get<3>(trackedUnit.second);
 
                     info += "   ";
-                    info += headerFile + " & " + payloadFile;
+                    info += headerFile + " & ";
+                    info += payloadFile;
                     info += "\n";
                 }
                 BOOST_LOG_TRIVIAL(info) << info << std::endl;
 
+                date = today();
+                currentPath = basePath;
+                currentPath /= get_date_path(date);
+
                 trackedUnits.clear();
 
-                date = today();
-                currentPath = basePath + "/" + get_date_path(date);
-
                 BOOST_LOG_TRIVIAL(info) << "Switching to new directory: " << currentPath << std::endl;
+            } else {
+                BOOST_LOG_TRIVIAL(info) << "No day rollover detected, but child processes ended?" << std::endl;
+                std::this_thread::sleep_for(std::chrono::seconds(30));
             }
         } else {
-            // TODO: implement
-            proceed_to_next_day(*date);
-
+            BOOST_LOG_TRIVIAL(info) << "Ending" << std::endl;
             return 0;
         }
     }

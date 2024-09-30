@@ -42,12 +42,11 @@ int main(int argc, char* argv[]) {
         return monitor_directory(argv[0], argv[1], dateStr);
     }
     catch (const std::invalid_argument& ia) {
-        std::cerr << "Invalid argument: " << ia.what() << std::endl;
+        std::cout << "Invalid argument: " << ia.what() << std::endl;
         return 2;
     }
     catch (std::exception& e) {
-        std::cerr << "Failed to process logs: " << e.what() << std::endl;
-        //printStackTrace();
+        std::cout << "Failed to process logs: " << e.what() << std::endl;
         return 3;
     }
 }

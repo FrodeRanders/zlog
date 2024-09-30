@@ -31,8 +31,8 @@ void randomDelay(int minMs, int maxMs) {
 
 // Simulate writing entries into header/payload paired files for a given date
 void generateTestDataForDay(const std::string& basePath, std::tm* dateTm, const unsigned int numFilePairs, const unsigned int numberEntries) {
-    std::cout << "Starting test data generation for day: " << (1900 + dateTm->tm_year)
-              << "/" << (dateTm->tm_mon + 1) << "/" << dateTm->tm_mday << " " << std::flush;
+    std::cout << "Generating test data for " << (1900 + dateTm->tm_year)
+              << "-" << (dateTm->tm_mon + 1) << "-" << dateTm->tm_mday << " " << std::flush;
 
     std::vector<std::string> fruits = {"Apple", "Banana", "Cherry", "Date", "Elderberry", "Fig", "Grape"};
     std::string inputString = "InputInputInputInputInputInputInputInputInputInputInput";
@@ -132,40 +132,189 @@ void incrementDate(std::tm* dateTm) {
     *dateTm = *std::localtime(&timeSinceEpoch);
 }
 
+std::tm* today() {
+    std::time_t now = std::time(nullptr);
+    return std::localtime(&now);
+}
+
+// Function to check if two tm structs represent different days
+bool datesDiffer(const std::tm* t1, const std::tm* t2) {
+    return (t1->tm_year != t2->tm_year ||
+            t1->tm_mon != t2->tm_mon ||
+            t1->tm_mday != t2->tm_mday);
+}
+
+bool differsFromToday(const std::tm*const &then) {
+    return datesDiffer(then, today());
+}
+
+[[noreturn]] void generateContinuousTestData(const std::string& basePath) {
+    constexpr unsigned int numFilePairs = 10;
+    std::tm* date = today();
+
+    std::cout << "Generating test data for " << (1900 + date->tm_year)
+              << "-" << (date->tm_mon + 1) << "-" << date->tm_mday << " " << std::flush;
+
+    std::vector<std::string> fruits = {"Apple", "Banana", "Cherry", "Date", "Elderberry", "Fig", "Grape"};
+    std::string inputString = "InputInputInputInputInputInputInputInputInputInputInput";
+    std::string outputString = "OutputOutputOutputOutputOutputOutputOutputOutputOutputOutputOutputOutputOutputOutput";
+
+    std::string dirPath = getDateDirectory(basePath, date);
+
+    // Create the directory structure if it doesn't exist
+    if (!fs::exists(dirPath)) {
+        fs::create_directories(dirPath);
+    }
+
+    // Open header and payload file pairs
+    std::vector<std::ofstream> headerFiles(numFilePairs);
+    std::vector<std::ofstream> payloadFiles(numFilePairs);
+    for (unsigned int i = 0; i < numFilePairs; ++i) {
+        std::string headerPath = dirPath + "/file" + std::to_string(i) + ".header";
+        std::string payloadPath = dirPath + "/file" + std::to_string(i) + ".payload";
+
+        headerFiles[i].open(headerPath, std::ios::out | std::ios::app);
+        payloadFiles[i].open(payloadPath, std::ios::out | std::ios::app);
+    }
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> fileSelector(0, numFilePairs - 1);
+
+    std::uniform_int_distribution<> delayedHeaderWrite(0, 100);
+
+    //
+    std::vector<std::streamoff> currentPayloadOffset(numFilePairs, 0);
+
+    //
+    unsigned long counter = 0L;
+    while (true) {
+        int fileIndex = fileSelector(gen);  // Randomly select one of the file pairs
+
+        // Generate header entry
+        std::string headerLine;
+        headerLine += fruits[counter % fruits.size()] + ",";
+        headerLine += fruits[(counter + 1) % fruits.size()] + ",";
+        headerLine += "Potato,,Carrot,";
+        headerLine += fruits[(counter + 2) % fruits.size()] + ",";
+
+        if (delayedHeaderWrite(gen) > 10) {
+            // No flush
+            headerLine += fruits[(counter + 3) % fruits.size()] + ",";
+
+        } else {
+            // Simulate (on the client side) reading half written headers
+            // partial write of header entry
+            headerFiles[fileIndex] << headerLine << std::flush;
+            randomDelay(1, 100);
+
+            headerLine = fruits[(counter + 3) % fruits.size()] + ",";
+        }
+
+        headerLine += std::to_string(inputString.size()) + ",";
+        headerLine += std::to_string(outputString.size()) + ",";
+        headerLine += std::to_string(currentPayloadOffset[fileIndex]) + "\n";
+        headerFiles[fileIndex] << headerLine;
+
+        // Generate payload data
+        payloadFiles[fileIndex] << inputString << outputString;
+
+        // Update the current offset for the next entry
+        currentPayloadOffset[fileIndex] += static_cast<std::streamoff>(inputString.size() + outputString.size());
+
+        // Stochastically flush buffers
+        randomDelay(10, 50);
+        if (counter % 5 == 0) {
+            headerFiles[fileIndex].flush();   // Flush header file first
+            randomDelay(10, 50);  // Delay between flushing header and payload
+            payloadFiles[fileIndex].flush();  // Then flush payload file
+        } else if (counter % 7 == 0) {
+            payloadFiles[fileIndex].flush();  // Flush payload file first
+            randomDelay(10, 50);  // Delay between flushing payload and header
+            headerFiles[fileIndex].flush();   // Then flush header file
+        }
+        ++counter;
+
+        // Random delay between entries to simulate realistic file writing
+        randomDelay(10, 100);
+
+        // Check if we have passed into a new day
+        if (differsFromToday(date)) {
+            std::cout << std::flush << "Detected day rollover" << std::endl;
+
+            // Close all open files
+            for (int i = 0; i < numFilePairs; ++i) {
+                headerFiles[i].close();
+                payloadFiles[i].close();
+            }
+
+            date = today();
+            dirPath = getDateDirectory(basePath, date);
+
+            std::cout << "Generating test data for " << (1900 + date->tm_year)
+                     << "-" << (date->tm_mon + 1) << "-" << date->tm_mday << " " << std::flush;
+
+            // Re-open new files
+            for (int i = 0; i < numFilePairs; ++i) {
+                std::string headerPath = dirPath + "/file" + std::to_string(i) + ".header";
+                std::string payloadPath = dirPath + "/file" + std::to_string(i) + ".payload";
+
+                headerFiles[i].open(headerPath, std::ios::out | std::ios::app);
+                payloadFiles[i].open(payloadPath, std::ios::out | std::ios::app);
+            }
+        } else {
+            std::cout << "." << std::flush;
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
     try {
-        if (argc != 5) {
+        if (argc < 2) {
             std::cerr << "Usage: " << argv[0] << " <base-directory> <number_of_days> <number_of_file_pairs> <number_of_entries>" << std::endl;
             return 1;
         }
 
+        unsigned int numberOfDays = 0;
+        unsigned int numberOfFilePairs = 0;
+        unsigned int numberOfEntries = 0;
+
         unsigned int idx = 1;
         std::string basePath = argv[idx++];
 
-        unsigned int numberOfDays = std::stoul(argv[idx++]);
-        if (numberOfDays == 0) {
-            std::cerr << "Provide number of days" << std::endl;
-            return 1;
+        if (argc > 2) {
+            numberOfDays = std::stoul(argv[idx++]);
+            if (numberOfDays == 0) {
+                std::cerr << "Provide number of days" << std::endl;
+                return 1;
+            }
         }
 
-        unsigned int numberOfFilePairs = std::stoul(argv[idx++]);
-        if (numberOfFilePairs == 0) {
-            std::cerr << "Provide number of file pairs" << std::endl;
+        if (argc > 3) {
+            numberOfFilePairs = std::stoul(argv[idx++]);
+            if (numberOfFilePairs == 0) {
+                std::cerr << "Provide number of file pairs" << std::endl;
+            }
         }
 
-        unsigned int numberOfEntries = std::stoul(argv[idx++]);
-        if (numberOfEntries == 0) {
-            std::cerr << "Provide number of entries" << std::endl;
+        if (argc > 4) {
+            numberOfEntries = std::stoul(argv[idx++]);
+            if (numberOfEntries == 0) {
+                std::cerr << "Provide number of entries" << std::endl;
+            }
         }
 
         // Start date (today)
-        std::time_t now = std::time(nullptr);
-        std::tm dateTm = *std::localtime(&now);
+        std::tm* date = today();
 
         // Simulate writing data for the specified number of days
-        for (int day = 0; day < numberOfDays; ++day) {
-            generateTestDataForDay(basePath, &dateTm, numberOfFilePairs, numberOfEntries);
-            incrementDate(&dateTm);  // Move to the next day
+        if (argc == 5) {
+            for (int day = 0; day < numberOfDays; ++day) {
+                generateTestDataForDay(basePath, date, numberOfFilePairs, numberOfEntries);
+                incrementDate(date);  // Move to the next day
+            }
+        } else {
+            generateContinuousTestData(basePath);
         }
     }
     catch (const std::invalid_argument& ia) {
