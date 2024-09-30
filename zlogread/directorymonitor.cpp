@@ -29,12 +29,11 @@ namespace keywords = boost::log::keywords;
 namespace bp = boost::process;
 
 // Forward declarations
-std::string tm_to_string(const std::tm* timeStruct, const std::string& format);
+std::string tm_to_string(const std::tm& timeStruct, const std::string& format);
 std::tm string_to_tm(const std::string& timeString, const std::string& format);
-std::tm* today();
-bool dates_differ(const std::tm* t1, const std::tm* t2);
-bool differs_from_today(const std::tm*const &then);
-std::string get_date_path(std::tm* today);
+std::tm today();
+bool differs_from_today(const std::tm& then);
+std::string get_date_path(const std::tm& today);
 void proceed_to_next_day(std::tm& date);
 
 //
@@ -126,13 +125,11 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
     std::string executable = myself.filename().string();
 
     // Determine date of log files
-    std::tm initialDate{};
-    std::tm* date;
+    std::tm date = today();
     if (dateStr.empty()) {
         date = today();
     } else {
-        initialDate = string_to_tm(dateStr, "%Y-%m-%d");
-        date = &initialDate;
+        date = string_to_tm(dateStr, "%Y-%m-%d");
     }
 
     BOOST_LOG_TRIVIAL(debug) << "Will instantiate sub-processes using executable: " << myself << std::endl;
@@ -291,6 +288,8 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                 BOOST_LOG_TRIVIAL(info) << "Switching to new directory: " << currentPath << std::endl;
             } else {
                 BOOST_LOG_TRIVIAL(info) << "No day rollover detected, but child processes ended?" << std::endl;
+                BOOST_LOG_TRIVIAL(info) << "Set on " << tm_to_string(date, "%Y-%m-%d")
+                << " and today is " << tm_to_string(today(), "%Y-%m-%d") << std::endl;
                 std::this_thread::sleep_for(std::chrono::seconds(30));
             }
         } else {

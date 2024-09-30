@@ -27,11 +27,11 @@ namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
 
 // Forward declarations
-std::string tm_to_string(const std::tm*const timeStruct, const std::string& format);
+std::string tm_to_string(const std::tm& timeStruct, const std::string& format);
 std::tm string_to_tm(const std::string& timeString, const std::string& format);
-std::tm* today();
-bool differs_from_today(const std::tm*const &then);
-std::string get_date_path(std::tm* today);
+std::tm today();
+bool differs_from_today(const std::tm& then);
+std::string get_date_path(const std::tm& today);
 
 
 
@@ -134,8 +134,7 @@ int process_header_and_payload(
     std::streamoff lastPayloadPos = 0;
     std::streamoff lastHeaderPos = 0;
 
-    std::tm initialDate = string_to_tm(dateStr, "%Y-%m-%d");
-    std::tm* date = &initialDate;
+    std::tm date = string_to_tm(dateStr, "%Y-%m-%d");
 
     fs::path headerFilePath = baseDir;
     headerFilePath /= get_date_path(date);

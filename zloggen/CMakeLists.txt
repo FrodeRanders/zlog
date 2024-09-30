@@ -14,6 +14,7 @@ set(TARGET_NAME zloggen)
 
 add_executable(${TARGET_NAME}
         main.cpp
+        utils.cpp
 )
 
 find_package(Boost 1.86 REQUIRED COMPONENTS
