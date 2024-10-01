@@ -93,7 +93,14 @@ static void load_state(const fs::path path, unsigned long id, std::streamoff &la
     }
 }
 
-static void process_payload(const std::vector<char>& input, const std::vector<char>& output) {
+static void process_payload(const std::vector<std::string>& headerData, const std::vector<char>& input, const std::vector<char>& output) {
+    //--------------------------------------------------------------------------
+    // Here you have the individual header fields (in 'headerData'),
+    // payload data: input (in 'input') and output (in 'output').
+    //--------------------------------------------------------------------------
+
+    // Currently only doing a validation of known input and output
+    // written by 'zloggen' (z-log generator, i.e. a test application).
     std::string _input = std::string(input.begin(), input.end());
     std::string _output = std::string(output.begin(), output.end());
 
@@ -189,16 +196,16 @@ int process_header_and_payload(
                 std::string line;
                 while (std::getline(headerStream, line)) {
                     //BOOST_LOG_TRIVIAL(trace) << "Read: " << line << std::endl;
-                    std::vector<std::string> data = split(line, ',');
+                    std::vector<std::string> headerData = split(line, ',');
 
-                    if (data.size() != 10) {
+                    if (headerData.size() != 10) {
                         BOOST_LOG_TRIVIAL(info) << "Header not ready: " << headerFile << std::endl;
                         break; // try again later
                     }
 
-                    auto inputSize = static_cast<std::streamsize>(std::stoul(data[7]));
-                    auto outputSize = static_cast<std::streamsize>(std::stoul(data[8]));
-                    auto offset = static_cast<std::streamoff>(std::stoul(data[9]));
+                    auto inputSize = static_cast<std::streamsize>(std::stoul(headerData[7]));
+                    auto outputSize = static_cast<std::streamsize>(std::stoul(headerData[8]));
+                    auto offset = static_cast<std::streamoff>(std::stoul(headerData[9]));
 
                     // Check if the corresponding payload data is fully written
                     std::streamoff expectedPayloadSize = offset + inputSize + outputSize;
@@ -217,7 +224,7 @@ int process_header_and_payload(
                         payloadStream.read(outputBuffer.data(), outputSize);
 
                         // Process input/output
-                        process_payload(inputBuffer, outputBuffer);
+                        process_payload(headerData, inputBuffer, outputBuffer);
                         processedEntries++;
 
                         // Update the last read position in both the header and payload files
