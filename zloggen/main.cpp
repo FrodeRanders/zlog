@@ -112,7 +112,7 @@ void generate_test_data_for_day(const std::string& basePath, const std::tm& date
         }
 
         // Random delay between entries to simulate realistic file writing
-        random_delay(10, 100);
+        random_delay(1, 10);
     }
 
     // Close all files
@@ -219,7 +219,7 @@ void increment_date(std::tm& dateTm) {
         ++counter;
 
         // Random delay between entries to simulate realistic file writing
-        random_delay(10, 100);
+        random_delay(1, 10);
 
         // Check if we have passed into a new day
         if (differs_from_today(date)) {

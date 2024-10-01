@@ -185,6 +185,7 @@ int process_header_and_payload(
     }
 
     unsigned long processedEntries = 0L;
+    signed int remainingReadAttempts = 0;
     while (true) {
         try {
             if (get_filesize(headerFilePath.string()) > lastHeaderPos) {
@@ -199,7 +200,12 @@ int process_header_and_payload(
                     std::vector<std::string> headerData = split(line, ',');
 
                     if (headerData.size() != 10) {
-                        BOOST_LOG_TRIVIAL(info) << "Header not ready: " << headerFile << std::endl;
+                        if (remainingReadAttempts == 0) {
+                            remainingReadAttempts = 10;
+                        } else {
+                            --remainingReadAttempts;
+                        }
+                        BOOST_LOG_TRIVIAL(info) << "Header not ready: " << headerFile << " -- Remaining attempts: " << remainingReadAttempts << std::endl;
                         break; // try again later
                     }
 
@@ -233,7 +239,7 @@ int process_header_and_payload(
 
                         // Persist the current read positions
                         save_state(stateDir, shard, lastHeaderPos, lastPayloadPos);
-
+                        remainingReadAttempts = 0;
                     } else {
                         break; // try again later
                     }
@@ -253,7 +259,7 @@ int process_header_and_payload(
         std::this_thread::sleep_for(std::chrono::seconds(10));
 
         // Check if we have rolled over to the next day
-        if (differs_from_today(date)) {
+        if (differs_from_today(date) && remainingReadAttempts == 0) {
             BOOST_LOG_TRIVIAL(info) << "I'm done, since I detected date rollover to " << tm_to_string(today(), "%Y-%m-%d")
             << " and I could not read more data from " << tm_to_string(date, "%Y-%m-%d") << std::endl;
 
@@ -262,8 +268,29 @@ int process_header_and_payload(
 
             std::cout << "Processed " << processedEntries << " entries" << std::endl;
             return 0;
-        } else {
-            // BOOST_LOG_TRIVIAL(trace) << "Continuing..." << std::endl;
+        }
+
+        if (remainingReadAttempts > 0) {
+            if (remainingReadAttempts == 1) {
+                // We have tried many times, so we will give up now
+                BOOST_LOG_TRIVIAL(error) << "I'm done, since I detected date rollover to "
+                         << tm_to_string(today(), "%Y-%m-%d")
+                         << ", but I failed repeatedly to read from header file " << headerFile
+                         << " at offset " << lastHeaderPos << " in log for "
+                         << tm_to_string(date, "%Y-%m-%d") << std::endl;
+
+                headerStream.close();
+                payloadStream.close();
+
+                std::cout << "Successfully processed " << processedEntries
+                          << " entries, but repeatedly failed reading header file " << headerFile
+                          << " at offset " << lastHeaderPos << " in log for "
+                          << tm_to_string(date, "%Y-%m-%d") << std::endl;
+                return 10;
+
+            }
+
+            BOOST_LOG_TRIVIAL(trace) << "Re-attempting header read (" << remainingReadAttempts << " times)..." << std::endl;
         }
     }
 }

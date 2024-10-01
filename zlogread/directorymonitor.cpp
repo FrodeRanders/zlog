@@ -201,7 +201,10 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
 
                     if (child->running()) {
                         std::string line;
-                        // Read from the child's stdout (non-blocking)
+                        // Read from the child's stdout (non-blocking). Note that if we read while
+                        // the process is running, we will not be able to read anything when the
+                        // child has exited. We accept that, since we want to be able to pick up
+                        // possible reports from the child process as they arrive.
                         if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
                             BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports: " << line;
                         }
@@ -209,13 +212,16 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                     } else {
                         child->wait();
 
-                        // Read from the child's stdout (non-blocking)
+                        // Read from the child's stdout (non-blocking). Note that this picks
+                        // up data from stdout that has not already been read (above). Anyhow,
+                        // the child process log entry is duly identified so we will be able to
+                        // piece together what happened.
                         std::string line;
-                        if (pipe_stream && std::getline(*pipe_stream, line) && !line.empty()) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports: " << line;
-                        }
+                        if (pipe_stream)
+                            std::getline(*pipe_stream, line);
 
                         int exitCode = child->exit_code();
+
                         if (exitCode > 100) {
                             // 101: Error opening header file
                             // 102: Error opening payload file
@@ -232,6 +238,9 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                                 info += "payload file ";
                                 info += stem + ".payload";
                             }
+                            if (!line.empty()) {
+                                info += ". It reports: " + line;
+                            }
 
                             // Remove this header and payload file pair from 'trackedUnits', and they will
                             // be picked up again in a little while.
@@ -243,10 +252,22 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                             } else {
                                 BOOST_LOG_TRIVIAL(error) << info << " -- Failed to locate unit among tracked units!" << std::endl;
                             }
+                        } else if (exitCode == 10) {
+                            std::string info = "Processor #";
+                            info += std::to_string(shard);
+                            info += " (pid=";
+                            info += std::to_string(child->id());
+                            info += ") could not process all headers in file ";
+                            info += stem + ".header. ";
+                            if (!line.empty()) {
+                                info += ". It reports: " + line;
+                            }
+                            BOOST_LOG_TRIVIAL(error) << info << std::endl;
+
                         } else if (exitCode == 0) {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") finished gracefully" << std::endl;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") finished gracefully with report: " << line << std::endl;
                         } else {
-                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports error: " << exitCode << std::endl;
+                            BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " (pid=" << child->id() << ") reports error (" << exitCode << "): " << line << std::endl;
                         }
 
                         cit = children.erase(cit);
