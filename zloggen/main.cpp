@@ -152,12 +152,20 @@ void increment_date(std::tm& dateTm) {
     // Open header and payload file pairs
     std::vector<std::ofstream> headerFiles(numFilePairs);
     std::vector<std::ofstream> payloadFiles(numFilePairs);
-    for (unsigned int i = 0; i < numFilePairs; ++i) {
+    // Open new files
+    for (int i = 0; i < numFilePairs; ++i) {
         std::string headerPath = dirPath + "/file" + std::to_string(i) + ".header";
         std::string payloadPath = dirPath + "/file" + std::to_string(i) + ".payload";
 
         headerFiles[i].open(headerPath, std::ios::out | std::ios::app);
+        if (!headerFiles[i].is_open()) {
+            std::cerr << "Error opening header file: " << headerPath << std::endl;
+        }
+
         payloadFiles[i].open(payloadPath, std::ios::out | std::ios::app);
+        if (!payloadFiles[i].is_open()) {
+            std::cerr << "Error opening payload file: " << payloadPath << std::endl;
+        }
     }
 
     std::random_device rd;
@@ -223,19 +231,27 @@ void increment_date(std::tm& dateTm) {
 
         // Check if we have passed into a new day
         if (differs_from_today(date)) {
-            std::cout << std::flush << "Detected day rollover" << std::endl;
+            std::cout << std::flush << std::endl << "Detected day rollover" << std::endl;
 
             // Close all open files
             for (int i = 0; i < numFilePairs; ++i) {
-                headerFiles[i].close();
-                payloadFiles[i].close();
+                if (headerFiles[i].is_open()) {
+                    headerFiles[i].close();
+                }
+                if (payloadFiles[i].is_open()) {
+                    payloadFiles[i].close();
+                }
             }
 
             date = today();
             dirPath = basePath + "/" + get_date_path(date);
 
+            if (!fs::exists(dirPath)) {
+                fs::create_directories(dirPath);
+            }
+
             std::cout << "Generating test data for " << (1900 + date.tm_year)
-                     << "-" << (date.tm_mon + 1) << "-" << date.tm_mday << " " << std::flush;
+                     << "-" << (date.tm_mon + 1) << "-" << date.tm_mday << " " << std::endl << std::flush;
 
             // Re-open new files
             for (int i = 0; i < numFilePairs; ++i) {
@@ -243,7 +259,14 @@ void increment_date(std::tm& dateTm) {
                 std::string payloadPath = dirPath + "/file" + std::to_string(i) + ".payload";
 
                 headerFiles[i].open(headerPath, std::ios::out | std::ios::app);
+                if (!headerFiles[i].is_open()) {
+                    std::cerr << "Error opening header file: " << headerPath << std::endl;
+                }
+
                 payloadFiles[i].open(payloadPath, std::ios::out | std::ios::app);
+                if (!payloadFiles[i].is_open()) {
+                    std::cerr << "Error opening payload file: " << payloadPath << std::endl;
+                }
             }
         } else {
             std::cout << "." << std::flush;
