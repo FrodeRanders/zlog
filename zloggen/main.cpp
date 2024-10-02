@@ -253,8 +253,10 @@ void increment_date(std::tm& dateTm) {
             std::cout << "Generating test data for " << (1900 + date.tm_year)
                      << "-" << (date.tm_mon + 1) << "-" << date.tm_mday << " " << std::endl << std::flush;
 
-            // Re-open new files
+            // Re-open new files and reset payload offset
             for (int i = 0; i < numFilePairs; ++i) {
+                currentPayloadOffset[i] = 0;
+
                 std::string headerPath = dirPath + "/file" + std::to_string(i) + ".header";
                 std::string payloadPath = dirPath + "/file" + std::to_string(i) + ".payload";
 
