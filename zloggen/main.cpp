@@ -214,7 +214,7 @@ void increment_date(std::tm& dateTm) {
         currentPayloadOffset[fileIndex] += static_cast<std::streamoff>(inputString.size() + outputString.size());
 
         // Stochastically flush buffers
-        random_delay(10, 50);
+        random_delay(0, 5);
         if (counter % 5 == 0) {
             headerFiles[fileIndex].flush();   // Flush header file first
             random_delay(10, 50);  // Delay between flushing header and payload
@@ -227,7 +227,7 @@ void increment_date(std::tm& dateTm) {
         ++counter;
 
         // Random delay between entries to simulate realistic file writing
-        random_delay(1, 10);
+        random_delay(0, 10);
 
         // Check if we have passed into a new day
         if (differs_from_today(date)) {
