@@ -22,6 +22,9 @@
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/log/attributes/named_scope.hpp>
 
+#define NOMINAL_BATCH_COUNT 5000L
+#define NOMINAL_BATCH_SIZE 1000000L
+
 namespace fs = boost::filesystem;
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
@@ -55,21 +58,24 @@ static std::streamoff get_filesize(const std::string& path) {
 }
 
 // Utility function to save the current state (last read positions)
-static void save_state(const fs::path path, unsigned long id, std::streamoff lastHeaderPos, std::streamoff lastPayloadPos) {
+static void save_state(const fs::path& path, unsigned long id, std::streamoff lastHeaderPos, std::streamoff lastPayloadPos, unsigned long size, unsigned long count) {
     std::string name = "processor-" + std::to_string(id) + ".state";
     fs::path statePath = path;
     statePath /= name;
 
     std::ofstream stateStream(statePath.string(), std::ios::binary | std::ios::out | std::ios::trunc);
     if (stateStream) {
-        stateStream << std::to_string(lastHeaderPos) << "," << std::to_string(lastPayloadPos) << std::endl;
+        stateStream
+            << std::to_string(lastHeaderPos) << ","
+            << std::to_string(lastPayloadPos) << ","
+            << std::to_string(size) << ","
+            << std::to_string(count) << std::endl;
         stateStream.close();
     }
-    //BOOST_LOG_TRIVIAL(trace) << "Saved offsets[" << id <<"]: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
 }
 
 // Utility function to load the saved state (last read positions)
-static void load_state(const fs::path path, unsigned long id, std::streamoff &lastHeaderPos, std::streamoff &lastPayloadPos) {
+static void load_state(const fs::path& path, unsigned long id, std::streamoff &lastHeaderPos, std::streamoff &lastPayloadPos, unsigned long& size, unsigned long& count) {
     std::string name = "processor-" + std::to_string(id) + ".state";
     fs::path statePath = path;
     statePath /= name;
@@ -79,18 +85,23 @@ static void load_state(const fs::path path, unsigned long id, std::streamoff &la
         std::string line;
         if (std::getline(stateFile, line)) {
             std::vector<std::string> data = split(line, ',');
-            if (data.size() != 2) {
+            if (data.size() != 4) {
                 BOOST_LOG_TRIVIAL(error) << "Corrupt state: " << line << " (" << name << ")" << std::endl;
             } else {
                 lastHeaderPos = static_cast<std::streamoff>(std::stoul(data[0]));
                 lastPayloadPos = static_cast<std::streamoff>(std::stoul(data[1]));
-                BOOST_LOG_TRIVIAL(trace) << "Loaded offsets[" << id <<"]: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << std::endl;
+                size = static_cast<std::streamoff>(std::stoul(data[2]));
+                count = static_cast<std::streamoff>(std::stoul(data[3]));
+                BOOST_LOG_TRIVIAL(trace) << "Loaded state [" << id <<"]: header=" << lastHeaderPos << ", payload=" << lastPayloadPos << ", size=" << size << ", count=" << count << std::endl;
             }
         } else {
             BOOST_LOG_TRIVIAL(debug) << "Empty file: " << name << std::endl;
         }
         stateFile.close();
     }
+}
+static void write_to_object_store(const std::string& reason) {
+        BOOST_LOG_TRIVIAL(debug) << "Wrap up and save to ObjectStore: " << reason << std::endl;
 }
 
 static void process_header_and_payload(
@@ -129,10 +140,10 @@ static void process_header_and_payload(
     size += inputSize + outputSize;
     ++count;
 
-    if (size > 5000L || count > 5000L) { // Arbitrary values, really
-        BOOST_LOG_TRIVIAL(info) << "Reached limit (on accumulated size=" << size << " or count=" << count << ")" << std::endl;
+    if (size > NOMINAL_BATCH_SIZE || count > NOMINAL_BATCH_COUNT) { // Arbitrary values, really
+        write_to_object_store("Reached limit: size=" + std::to_string(size) + " count=" + std::to_string(count));
 
-        // Break up things and reset accumulators
+        // Reset accumulators
         size = 0L;
         count = 0L;
     }
@@ -174,12 +185,21 @@ int process(
     headerFilePath /= headerFile; // unique
     payloadFilePath /= payloadFile; // unique
 
+    // Accumulators
+    unsigned long accSize = 0L;
+    unsigned long accCount = 0L;
 
     // Load the previous state (if any)
-    load_state(stateDir, shard, lastHeaderPos, lastPayloadPos);
+    load_state(stateDir, shard, lastHeaderPos, lastPayloadPos, accSize, accCount);
+    if (accSize > NOMINAL_BATCH_SIZE || accCount > NOMINAL_BATCH_COUNT) {
+        write_to_object_store("Reached limit: size=" + std::to_string(accSize) + " count=" + std::to_string(accCount));
+
+        // Reset accumulators
+        accSize = 0L;
+        accCount = 0L;
+    }
 
     BOOST_LOG_TRIVIAL(info) << "Processor #" << shard << " starting at position " << lastHeaderPos << " in " << headerFilePath.string() << std::endl;
-
 
     // Open both files and keep them open
     std::ifstream headerStream(headerFilePath.string(), std::ios::binary | std::ios::in);
@@ -206,10 +226,6 @@ int process(
         headerStream.close();
         return 102;
     }
-
-    // Accumulators
-    unsigned long accSize = 0L;
-    unsigned long accCount = 0L;
 
     //
     unsigned long processedEntries = 0L;
@@ -259,7 +275,7 @@ int process(
                         lastHeaderPos = headerStream.tellg();
 
                         // Persist the current read positions
-                        save_state(stateDir, shard, lastHeaderPos, lastPayloadPos);
+                        save_state(stateDir, shard, lastHeaderPos, lastPayloadPos, accSize, accCount);
                         remainingReadAttempts = 0;
                     } else {
                         break; // try again later
@@ -287,13 +303,15 @@ int process(
             headerStream.close();
             payloadStream.close();
 
+            write_to_object_store("Date roll over, clean flush...");
+
             std::cout << "Processed " << processedEntries << " entries" << std::endl;
             return 0;
         }
 
         if (remainingReadAttempts > 0) {
             if (remainingReadAttempts == 1) {
-                // We have tried many times, so we will give up now
+                // We have tried many times, but we will give up now
                 BOOST_LOG_TRIVIAL(error) << "I'm done, since I detected date rollover to "
                          << tm_to_string(today(), "%Y-%m-%d")
                          << ", but I failed repeatedly to read from header file " << headerFile
@@ -303,15 +321,15 @@ int process(
                 headerStream.close();
                 payloadStream.close();
 
+                write_to_object_store("Date roll over, unclean flush...");
+
                 std::cout << "Successfully processed " << processedEntries
                           << " entries, but repeatedly failed reading header file " << headerFile
                           << " at offset " << lastHeaderPos << " in log for "
                           << tm_to_string(date, "%Y-%m-%d") << std::endl;
+
                 return 10;
-
             }
-
-            // BOOST_LOG_TRIVIAL(trace) << "Re-attempting header read (" << remainingReadAttempts << " times)..." << std::endl;
         }
     }
 }
