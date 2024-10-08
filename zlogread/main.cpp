@@ -12,7 +12,7 @@ namespace keywords = boost::log::keywords;
 
 // Forward declarations
 void print_stacktrace();
-int process_header_and_payload(int id, const std::string& baseDir, const std::string& date, const std::string& headerFile, const std::string& payloadFile);
+int process(int id, const std::string& baseDir, const std::string& date, const std::string& headerFile, const std::string& payloadFile);
 int monitor_directory(const fs::path& myself, const std::string& basePath, const std::string& dateStr);
 
 
@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) {
 
         if (std::strcmp(argv[1], "-p") == 0 && argc == 7) {
             int id = std::stoi(argv[2]);
-            return process_header_and_payload(id, argv[3], argv[4], argv[5], argv[6]);
+            return process(id, argv[3], argv[4], argv[5], argv[6]);
         }
 
         std::string dateStr;

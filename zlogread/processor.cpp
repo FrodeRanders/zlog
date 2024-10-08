@@ -93,29 +93,52 @@ static void load_state(const fs::path path, unsigned long id, std::streamoff &la
     }
 }
 
-static void process_payload(const std::vector<std::string>& headerData, const std::vector<char>& input, const std::vector<char>& output) {
+static void process_header_and_payload(
+    const std::vector<std::string>& headerData,
+    const std::streamsize inputSize,
+    const std::streamsize outputSize,
+    std::ifstream& payloadStream,
+    unsigned long& size, unsigned long& count
+) {
     //--------------------------------------------------------------------------
     // Here you have the individual header fields (in 'headerData'),
     // payload data: input (in 'input') and output (in 'output').
     //--------------------------------------------------------------------------
 
-    // Currently only doing a validation of known input and output
-    // written by 'zloggen' (z-log generator, i.e. a test application).
-    std::string _input = std::string(input.begin(), input.end());
-    std::string _output = std::string(output.begin(), output.end());
+    // For debugging purposes, we read the data and makes some checks based on
+    // knowledge of what zloggen (z-log generator, i.e. a test application) is writing...
+    std::vector<char> inputBuffer(inputSize);
+    std::vector<char> outputBuffer(outputSize);
 
-    if (!_input.starts_with("Input") && _input.ends_with("Input")) {
-        BOOST_LOG_TRIVIAL(error) << "Corrupt input: " << _input << std::endl;
-        throw std::underflow_error("Corrupt input: " + _input);
+    payloadStream.read(inputBuffer.data(), inputSize);
+    payloadStream.read(outputBuffer.data(), outputSize);
+
+    std::string input = std::string(inputBuffer.begin(), inputBuffer.end());
+    std::string output = std::string(outputBuffer.begin(), outputBuffer.end());
+
+    if (!input.starts_with("Input") && input.ends_with("Input")) {
+        BOOST_LOG_TRIVIAL(error) << "Corrupt input: " << input << std::endl;
+        throw std::underflow_error("Corrupt input: " + input);
     }
 
-    if (!_output.starts_with("Output") && _output.ends_with("Output")) {
-        BOOST_LOG_TRIVIAL(error) << "Corrupt output: " << _output << std::endl;
-        throw std::underflow_error("Corrupt output: " + _output);
+    if (!output.starts_with("Output") && output.ends_with("Output")) {
+        BOOST_LOG_TRIVIAL(error) << "Corrupt output: " << output << std::endl;
+        throw std::underflow_error("Corrupt output: " + output);
+    }
+
+    size += inputSize + outputSize;
+    ++count;
+
+    if (size > 5000L || count > 5000L) { // Arbitrary values, really
+        BOOST_LOG_TRIVIAL(info) << "Reached limit (on accumulated size=" << size << " or count=" << count << ")" << std::endl;
+
+        // Break up things and reset accumulators
+        size = 0L;
+        count = 0L;
     }
 }
 
-int process_header_and_payload(
+int process(
     int shard,
     const std::string& baseDir,
     const std::string& dateStr,
@@ -184,6 +207,11 @@ int process_header_and_payload(
         return 102;
     }
 
+    // Accumulators
+    unsigned long accSize = 0L;
+    unsigned long accCount = 0L;
+
+    //
     unsigned long processedEntries = 0L;
     signed int remainingReadAttempts = 0;
     while (true) {
@@ -222,15 +250,8 @@ int process_header_and_payload(
                         payloadStream.clear(); // clears EOF flag if set
                         payloadStream.seekg(offset);
 
-                        // Read input and output from the payload file
-                        std::vector<char> inputBuffer(inputSize);
-                        std::vector<char> outputBuffer(outputSize);
-
-                        payloadStream.read(inputBuffer.data(), inputSize);
-                        payloadStream.read(outputBuffer.data(), outputSize);
-
                         // Process input/output
-                        process_payload(headerData, inputBuffer, outputBuffer);
+                        process_header_and_payload(headerData, inputSize, outputSize, payloadStream, accSize, accCount);
                         processedEntries++;
 
                         // Update the last read position in both the header and payload files
@@ -290,7 +311,7 @@ int process_header_and_payload(
 
             }
 
-            BOOST_LOG_TRIVIAL(trace) << "Re-attempting header read (" << remainingReadAttempts << " times)..." << std::endl;
+            // BOOST_LOG_TRIVIAL(trace) << "Re-attempting header read (" << remainingReadAttempts << " times)..." << std::endl;
         }
     }
 }
