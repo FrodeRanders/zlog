@@ -217,17 +217,17 @@ void increment_date(std::tm& dateTm) {
         random_delay(0, 5);
         if (counter % 5 == 0) {
             headerFiles[fileIndex].flush();   // Flush header file first
-            random_delay(10, 50);  // Delay between flushing header and payload
+            random_delay(1, 50);  // Delay between flushing header and payload
             payloadFiles[fileIndex].flush();  // Then flush payload file
         } else if (counter % 7 == 0) {
             payloadFiles[fileIndex].flush();  // Flush payload file first
-            random_delay(10, 50);  // Delay between flushing payload and header
+            random_delay(1, 50);  // Delay between flushing payload and header
             headerFiles[fileIndex].flush();   // Then flush header file
         }
         ++counter;
 
         // Random delay between entries to simulate realistic file writing
-        random_delay(0, 10);
+        random_delay(0, 5);
 
         // Check if we have passed into a new day
         if (differs_from_today(date)) {
