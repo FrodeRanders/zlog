@@ -23,6 +23,8 @@
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/log/attributes/named_scope.hpp>
 
+#include "zlog.h"
+
 namespace fs = boost::filesystem;
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
@@ -129,7 +131,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
     if (dateStr.empty()) {
         date = today();
     } else {
-        date = string_to_tm(dateStr, "%Y-%m-%d");
+        date = string_to_tm(dateStr, DATE_FORMAT);
     }
 
     BOOST_LOG_TRIVIAL(debug) << "Will instantiate sub-processes using executable: " << myself << std::endl;
@@ -172,7 +174,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                             "-p",
                             std::to_string(++shard),
                             basePath,
-                            tm_to_string(date, "%Y-%m-%d"),
+                            tm_to_string(date, DATE_FORMAT),
                             headerFile,
                             payloadFile,
                             bp::std_out > *pipe_stream  // redirect stdout to pipe_stream
@@ -309,8 +311,8 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                 BOOST_LOG_TRIVIAL(info) << "Switching to new directory: " << currentPath << std::endl;
             } else {
                 BOOST_LOG_TRIVIAL(info) << "No day rollover detected, but child processes ended?" << std::endl;
-                BOOST_LOG_TRIVIAL(info) << "Set on " << tm_to_string(date, "%Y-%m-%d")
-                << " and today is " << tm_to_string(today(), "%Y-%m-%d") << std::endl;
+                BOOST_LOG_TRIVIAL(info) << "Set on " << tm_to_string(date, DATE_FORMAT)
+                << " and today is " << tm_to_string(today(), DATE_FORMAT) << std::endl;
                 std::this_thread::sleep_for(std::chrono::seconds(30));
             }
         } else {

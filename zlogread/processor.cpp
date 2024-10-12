@@ -22,8 +22,8 @@
 #include <boost/log/utility/setup/console.hpp>
 #include <boost/log/attributes/named_scope.hpp>
 
-#define NOMINAL_BATCH_COUNT 5000L
-#define NOMINAL_BATCH_SIZE 1000000L
+#include "zlog.h"
+
 
 namespace fs = boost::filesystem;
 namespace logging = boost::log;
@@ -36,6 +36,15 @@ std::tm today();
 bool differs_from_today(const std::tm& then);
 std::string get_date_path(const std::tm& today);
 
+void write_to_object_store(const std::string& reason);
+
+void process_header_and_payload(
+    const std::vector<std::string>& headerData,
+    std::streamsize inputSize,
+    std::streamsize outputSize,
+    std::ifstream& payloadStream,
+    unsigned long& size, unsigned long& count
+);
 
 
 static std::vector<std::string> split(const std::string& line, char delimiter) {
@@ -100,54 +109,6 @@ static void load_state(const fs::path& path, unsigned long id, std::streamoff &l
         stateFile.close();
     }
 }
-static void write_to_object_store(const std::string& reason) {
-        BOOST_LOG_TRIVIAL(debug) << "Wrap up and save to ObjectStore: " << reason << std::endl;
-}
-
-static void process_header_and_payload(
-    const std::vector<std::string>& headerData,
-    const std::streamsize inputSize,
-    const std::streamsize outputSize,
-    std::ifstream& payloadStream,
-    unsigned long& size, unsigned long& count
-) {
-    //--------------------------------------------------------------------------
-    // Here you have the individual header fields (in 'headerData'),
-    // payload data: input (in 'input') and output (in 'output').
-    //--------------------------------------------------------------------------
-
-    // For debugging purposes, we read the data and makes some checks based on
-    // knowledge of what zloggen (z-log generator, i.e. a test application) is writing...
-    std::vector<char> inputBuffer(inputSize);
-    std::vector<char> outputBuffer(outputSize);
-
-    payloadStream.read(inputBuffer.data(), inputSize);
-    payloadStream.read(outputBuffer.data(), outputSize);
-
-    std::string input = std::string(inputBuffer.begin(), inputBuffer.end());
-    std::string output = std::string(outputBuffer.begin(), outputBuffer.end());
-
-    if (!input.starts_with("Input") && input.ends_with("Input")) {
-        BOOST_LOG_TRIVIAL(error) << "Corrupt input: " << input << std::endl;
-        throw std::underflow_error("Corrupt input: " + input);
-    }
-
-    if (!output.starts_with("Output") && output.ends_with("Output")) {
-        BOOST_LOG_TRIVIAL(error) << "Corrupt output: " << output << std::endl;
-        throw std::underflow_error("Corrupt output: " + output);
-    }
-
-    size += inputSize + outputSize;
-    ++count;
-
-    if (size > NOMINAL_BATCH_SIZE || count > NOMINAL_BATCH_COUNT) { // Arbitrary values, really
-        write_to_object_store("Reached limit: size=" + std::to_string(size) + " count=" + std::to_string(count));
-
-        // Reset accumulators
-        size = 0L;
-        count = 0L;
-    }
-}
 
 int process(
     int shard,
@@ -175,7 +136,7 @@ int process(
     std::streamoff lastPayloadPos = 0;
     std::streamoff lastHeaderPos = 0;
 
-    std::tm date = string_to_tm(dateStr, "%Y-%m-%d");
+    std::tm date = string_to_tm(dateStr, DATE_FORMAT);
 
     fs::path headerFilePath = baseDir;
     headerFilePath /= get_date_path(date);
@@ -240,7 +201,6 @@ int process(
                 // Read header entries
                 std::string line;
                 while (std::getline(headerStream, line)) {
-                    //BOOST_LOG_TRIVIAL(trace) << "Read: " << line << std::endl;
                     std::vector<std::string> headerData = split(line, ',');
 
                     if (headerData.size() != 10) {
@@ -297,8 +257,8 @@ int process(
 
         // Check if we have rolled over to the next day
         if (differs_from_today(date) && remainingReadAttempts == 0) {
-            BOOST_LOG_TRIVIAL(info) << "I'm done, since I detected date rollover to " << tm_to_string(today(), "%Y-%m-%d")
-            << " and I could not read more data from " << tm_to_string(date, "%Y-%m-%d") << std::endl;
+            BOOST_LOG_TRIVIAL(info) << "I'm done, since I detected date rollover to " << tm_to_string(today(), DATE_FORMAT)
+            << " and I could not read more data from " << tm_to_string(date, DATE_FORMAT) << std::endl;
 
             headerStream.close();
             payloadStream.close();
@@ -313,10 +273,10 @@ int process(
             if (remainingReadAttempts == 1) {
                 // We have tried many times, but we will give up now
                 BOOST_LOG_TRIVIAL(error) << "I'm done, since I detected date rollover to "
-                         << tm_to_string(today(), "%Y-%m-%d")
+                         << tm_to_string(today(), DATE_FORMAT)
                          << ", but I failed repeatedly to read from header file " << headerFile
                          << " at offset " << lastHeaderPos << " in log for "
-                         << tm_to_string(date, "%Y-%m-%d") << std::endl;
+                         << tm_to_string(date, DATE_FORMAT) << std::endl;
 
                 headerStream.close();
                 payloadStream.close();
@@ -326,7 +286,7 @@ int process(
                 std::cout << "Successfully processed " << processedEntries
                           << " entries, but repeatedly failed reading header file " << headerFile
                           << " at offset " << lastHeaderPos << " in log for "
-                          << tm_to_string(date, "%Y-%m-%d") << std::endl;
+                          << tm_to_string(date, DATE_FORMAT) << std::endl;
 
                 return 10;
             }

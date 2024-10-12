@@ -11,7 +11,6 @@ namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
 
 // Forward declarations
-void print_stacktrace();
 int process(int id, const std::string& baseDir, const std::string& date, const std::string& headerFile, const std::string& payloadFile);
 int monitor_directory(const fs::path& myself, const std::string& basePath, const std::string& dateStr);
 

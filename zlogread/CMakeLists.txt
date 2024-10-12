@@ -15,10 +15,10 @@ set(TARGET_NAME zlogread)
 add_executable(${TARGET_NAME}
         main.cpp
         processor.cpp
-        stacktrace.cpp
         utils.cpp
         directorymonitor.cpp
-        filemonitor.cpp
+        zlog.h
+        processoraction.cpp
 )
 
 find_package(Boost 1.86 REQUIRED COMPONENTS
