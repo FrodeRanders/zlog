@@ -158,7 +158,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
             {
                 unsigned int shard = 0;
                 for (const auto& untrackedUnit : untrackedUnits) {
-                    // 'logUnit' is pairs of stem and tuples from the 'logUnits' map.
+                    // 'untrackedUnit' is pairs of stem and tuples from the 'untrackedUnits' map.
                     const std::string& stem = std::get<0>(untrackedUnit.second);
                     const fs::path& path = std::get<1>(untrackedUnit.second);
                     const std::string& headerFile = std::get<2>(untrackedUnit.second);
