@@ -6,6 +6,8 @@
 #include <boost/log/utility/setup/file.hpp>
 #include <boost/log/utility/setup/console.hpp>
 
+#include "zlog.h"
+
 namespace fs = boost::filesystem;
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
@@ -20,7 +22,7 @@ int main(int argc, char* argv[]) {
     try {
         if (argc < 2) {
             std::cerr << "Usage: " << argv[0] << " <base-directory> [<date>]" << std::endl;
-            return 1;
+            return STATUS_ARGUMENTS_MISSING;
         }
 
         // Set up console logging
@@ -42,10 +44,10 @@ int main(int argc, char* argv[]) {
     }
     catch (const std::invalid_argument& ia) {
         std::cout << "Invalid argument: " << ia.what() << std::endl;
-        return 2;
+        return STATUS_INVALID_ARGUMENT;
     }
     catch (std::exception& e) {
         std::cout << "Failed to process logs: " << e.what() << std::endl;
-        return 3;
+        return STATUS_GENERAL_FAILURE;
     }
 }

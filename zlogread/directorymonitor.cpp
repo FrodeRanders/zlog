@@ -224,7 +224,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
 
                         int exitCode = child->exit_code();
 
-                        if (exitCode > 100) {
+                        if (exitCode > FILE_READ_RELATED_ERRORS) {
                             // 101: Error opening header file
                             // 102: Error opening payload file
                             //
@@ -233,12 +233,14 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                             info += " (pid=";
                             info += std::to_string(child->id());
                             info += ") could not load ";
-                            if (exitCode == 101) {
+                            if (exitCode == STATUS_COULD_NOT_OPEN_HEADER_FILE) {
                                 info += "header file ";
                                 info += stem + ".header";
-                            } else {
+                            } else if (exitCode == STATUS_COULD_NOT_OPEN_PAYLOAD_FILE) {
                                 info += "payload file ";
                                 info += stem + ".payload";
+                            } else {
+                                info += "some file??";
                             }
                             if (!line.empty()) {
                                 info += ". It reports: " + line;
@@ -254,7 +256,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
                             } else {
                                 BOOST_LOG_TRIVIAL(error) << info << " -- Failed to locate unit among tracked units!" << std::endl;
                             }
-                        } else if (exitCode == 10) {
+                        } else if (exitCode == STATUS_ENDED_UNSUCCESSFULLY) {
                             std::string info = "Processor #";
                             info += std::to_string(shard);
                             info += " (pid=";
@@ -317,7 +319,7 @@ int monitor_directory(const fs::path& myself, const std::string& basePath, const
             }
         } else {
             BOOST_LOG_TRIVIAL(info) << "Ending" << std::endl;
-            return 0;
+            return STATUS_ENDED_SUCCESSFULLY;
         }
     }
 }

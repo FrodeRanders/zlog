@@ -203,9 +203,9 @@ int process(
                 while (std::getline(headerStream, line)) {
                     std::vector<std::string> headerData = split(line, ',');
 
-                    if (headerData.size() != 10) {
+                    if (headerData.size() != NUMBER_HEADER_FIELDS) {
                         if (remainingReadAttempts == 0) {
-                            remainingReadAttempts = 10;
+                            remainingReadAttempts = NUMBER_HEADER_READ_ATTEMPTS;
                         } else {
                             --remainingReadAttempts;
                         }
@@ -257,8 +257,8 @@ int process(
 
         // Check if we have rolled over to the next day
         if (differs_from_today(date) && remainingReadAttempts == 0) {
-            BOOST_LOG_TRIVIAL(info) << "I'm done, since I detected date rollover to " << tm_to_string(today(), DATE_FORMAT)
-            << " and I could not read more data from " << tm_to_string(date, DATE_FORMAT) << std::endl;
+            BOOST_LOG_TRIVIAL(info) << "Detected date rollover to " << tm_to_string(today(), DATE_FORMAT)
+            << ". Can not read more data from " << tm_to_string(date, DATE_FORMAT) << std::endl;
 
             headerStream.close();
             payloadStream.close();
@@ -266,16 +266,16 @@ int process(
             write_to_object_store("Date roll over, clean flush...");
 
             std::cout << "Processed " << processedEntries << " entries" << std::endl;
-            return 0;
+            return STATUS_ENDED_SUCCESSFULLY;
         }
 
         if (remainingReadAttempts > 0) {
             if (remainingReadAttempts == 1) {
                 // We have tried many times, but we will give up now
-                BOOST_LOG_TRIVIAL(error) << "I'm done, since I detected date rollover to "
+                BOOST_LOG_TRIVIAL(error) << "Detected date rollover to "
                          << tm_to_string(today(), DATE_FORMAT)
-                         << ", but I failed repeatedly to read from header file " << headerFile
-                         << " at offset " << lastHeaderPos << " in log for "
+                         << ". Repeatedly failed to read from header file " << headerFile
+                         << " at offset " << lastHeaderPos << " for "
                          << tm_to_string(date, DATE_FORMAT) << std::endl;
 
                 headerStream.close();
@@ -284,11 +284,11 @@ int process(
                 write_to_object_store("Date roll over, unclean flush...");
 
                 std::cout << "Successfully processed " << processedEntries
-                          << " entries, but repeatedly failed reading header file " << headerFile
-                          << " at offset " << lastHeaderPos << " in log for "
+                          << " entries. Repeatedly failed to read header file " << headerFile
+                          << " at offset " << lastHeaderPos << " for "
                           << tm_to_string(date, DATE_FORMAT) << std::endl;
 
-                return 10;
+                return STATUS_ENDED_UNSUCCESSFULLY;
             }
         }
     }
