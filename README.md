@@ -19,7 +19,7 @@ Also, the log reader can be interrupted at any time and/or restarted as it track
 * the last header file position successfully read, 
 * the last payload file position successfully read, 
 * the total accumulated size processed so far (in bytes), 
-* the total accumulated count of processed posts so far. 
+* the total accumulated count of log posts processed so far. 
 
 As it progresses, it will trigger some kind of action, but the action itself is only alluded to (it does some printout). The important bit is that this action is triggered either when a specific number of log posts has been processed or we have reached an accumulated amount of data that will be exceeded if we were to continue -- whatever comes first. In the latter case the action is performed before the last log post is processed.
 
