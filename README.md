@@ -1,5 +1,27 @@
-A log reader, that reads right behind the log writer and does 'things'
-======================================================================
+A log reader, that reads from log files while writer still writes
+=================================================================
+
+We have a situation with logging events (somewhere upward of 10 million per day) with a cumulative log size of around 300 GB per day. The log files are stored per day, per month and per year on expensive disks and we are migrating to a much cheaper solution. During migration we have the situation where we cannot turn off the old solution before having verified the new solution, so they run in parallel for a while. This personal project is my tentatice "Plan C" for integrating the log capturing frontend with the storage backend, should we run into problems related to forking the log data streams during the handover period.
+
+The log events emanates from a very large Tuxedo cluster and the log posts are collected from a set of /Q(ueues). From each such queue, for each day, a pair of header- and payload-files are produced. The header file contains various metadata and an offset and a size of binary data stored in the corresponding payload file. The payload file is just a linear dump of binary blobs (payload).
+
+This project contains a fictive log writer, for testing purposes, that acts like a tuxedo handler would do when consuming log events from it's /Q(ueue) and writing to a header- and payload-pair of files. Various stochastic delays are introduced in order to simulate situations 
+* where OS-buffers for the individual files are flushed out-of-order, or 
+* there are considerable delays in writing so that the files could be flushed with "half-written" posts
+
+The emphasis has really been on the log reader that is consuming the pair of header- and payload-files as they are being written -- with buffering anomalies and all. As an individual day is coming to an end, the log reader needs to be able to follow on over to the new day (another directory) while still being responsive to potential buffering delays. 
+
+The two binaries, of which only the log reader (zlogread) is of interest, branches out into several processes. While you start one instance of zlogread as a monitor, it in turn will start multiple instances of zlogread that processes an individual header- and payload-pair. It is the monitor that handles the number of processors to match the number of header- and payload-pairs.
+
+Also, the log reader can be interrupted at any time and/or restarted as it trackes state; 
+* the last header file position successfully read, 
+* the last payload file position successfully read, 
+* the total accumulated size processed so far (in bytes), 
+* the total accumulated count of processed posts so far. 
+
+As it progresses, it will trigger some kind of action, but the action itself is only alluded to (it does some printout). The important bit is that this action is triggered either when a specific number of log posts has been processed or we have reached an accumulated amount of data that will be exceeded if we were to continue -- whatever comes first. In the latter case the action is performed before the last log post is processed.
+
+The code is not particularly nice. This is written in C++ with a kind of C approach -- no classes -- and there is code duplication between the log writer and log reader. This could be cleaned up a bit. 
 
 ## Instructing log reader to consume log for one specific day 
 
