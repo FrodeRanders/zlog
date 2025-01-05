@@ -15,7 +15,7 @@ The emphasis has really been on the log reader that is consuming the pair of hea
 
 The two binaries, of which only the log reader (zlogread) is of interest, branches out into several processes. While you start one instance of zlogread as a monitor, it in turn will start multiple instances of zlogread that processes an individual header- and payload-pair. It is the monitor that handles the number of processors to match the number of header- and payload-pairs.
 
-Also, the log reader can be interrupted at any time and/or restarted as it trackes state; 
+Also, the log reader can be interrupted at any time and/or restarted as it tracks state; 
 * the last header file position successfully read, 
 * the last payload file position successfully read, 
 * the total accumulated size processed so far (in bytes), 
