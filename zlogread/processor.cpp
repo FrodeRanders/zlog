@@ -46,7 +46,8 @@ void process_header_and_payload(
     unsigned long& size, unsigned long& count
 );
 
-
+// Utility function to split text on a specific character (possibly ',').
+// Returns a vector of individual strings without the delimiter.
 static std::vector<std::string> split(const std::string& line, char delimiter) {
     std::vector<std::string> result;
     std::stringstream ss(line);
@@ -61,7 +62,7 @@ static std::vector<std::string> split(const std::string& line, char delimiter) {
 
 // Utility function to get file size
 static std::streamoff get_filesize(const std::string& path) {
-    struct stat stat_buf;
+    struct stat stat_buf{};
     int rc = stat(path.c_str(), &stat_buf);
     return rc == 0 ? stat_buf.st_size : -1;
 }
@@ -166,6 +167,7 @@ int process(
     std::ifstream headerStream(headerFilePath.string(), std::ios::binary | std::ios::in);
     std::ifstream payloadStream(payloadFilePath.string(), std::ios::binary | std::ios::in);
 
+    // Check for file open errors
     if (!headerStream.is_open()) {
         std::string info = "Error opening header file (";
         info += strerror(errno);
@@ -176,7 +178,6 @@ int process(
         return 101;
     }
 
-    // Check for file open errors
     if (!payloadStream.is_open()) {
         std::string info = "Error opening payload file (";
         info += strerror(errno);
