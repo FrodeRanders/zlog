@@ -5,7 +5,9 @@ We have a situation with logging events (somewhere upward of 10 million per day)
 
 The log events emanates from a very large Tuxedo cluster (now a Casual cluster) and the log posts are collected from a set of /Q(ueues). From each such queue, for each day, a pair of header- and payload-files are produced. The header file contains various metadata and an offset and a size of binary data stored in the corresponding payload file. The payload file is just a linear dump of binary blobs (payload).
 
-This project contains a fictive log writer, for testing purposes, that acts like a tuxedo handler would do when consuming log events from it's /Q(ueue) and writing to a header- and payload-pair of files. Various stochastic delays are introduced in order to simulate situations 
+This project contains a fictive log writer (zloggen), for testing purposes, and a log reader (zlogread). 
+
+The log writer acts like a tuxedo handler would do when consuming log events from it's /Q(ueue) and writing to a header- and payload-pair of files. Various stochastic delays are introduced in order to simulate situations 
 * where OS-buffers for the individual files are flushed out-of-order, or 
 * there are considerable delays in writing so that the files could be flushed with "half-written" posts
 
