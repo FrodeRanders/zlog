@@ -12,6 +12,7 @@
 #include <chrono>
 #include <sstream>
 #include <stdexcept>
+#include <cstdlib>
 
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
@@ -49,6 +50,23 @@ static std::streamoff get_filesize(const std::string& path) {
     struct stat stat_buf{};
     int rc = stat(path.c_str(), &stat_buf);
     return rc == 0 ? stat_buf.st_size : -1;
+}
+
+static std::chrono::milliseconds processor_sleep_duration() {
+    const char* value = std::getenv("ZLOG_PROCESSOR_SLEEP_MS");
+    if (!value) {
+        return std::chrono::seconds(10);
+    }
+
+    try {
+        long millis = std::stol(value);
+        if (millis >= 0) {
+            return std::chrono::milliseconds(millis);
+        }
+    } catch (const std::exception&) {
+    }
+
+    return std::chrono::seconds(10);
 }
 
 bool HeaderParser::try_parse(const std::string& line, HeaderEntry& entry) const {
@@ -164,6 +182,14 @@ Processor::Processor(
       action_(std::move(action)) {}
 
 static void validate_payload(const std::string& input, const std::string& output) {
+    /*
+     * OBSERVE: This only applies to mocking real payloads as it assumes a trivial
+     *          structure with known properties. Given this structure, this verification
+     *          is trivial.
+     *          This is more a test of actually running zlogread in pair with zloggen.
+     *
+     *          Going forward, remove this method!
+     */
     if (!input.starts_with("Input") && input.ends_with("Input")) {
         BOOST_LOG_TRIVIAL(error) << "Corrupt input: " << input << std::endl;
         throw std::underflow_error("Corrupt input: " + input);
@@ -303,7 +329,7 @@ int Processor::run() {
             throw;
         }
 
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        std::this_thread::sleep_for(processor_sleep_duration());
 
         if (differs_from_today(date) && remainingReadAttempts == 0) {
             BOOST_LOG_TRIVIAL(info) << "Detected date rollover to " << tm_to_string(today(), DATE_FORMAT)

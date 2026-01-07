@@ -1,0 +1,62 @@
+
+  Run all tests with:
+
+  > cmake -S test -B build/test
+  -- The C compiler identification is AppleClang 17.0.0.17000603
+  -- The CXX compiler identification is AppleClang 17.0.0.17000603
+  -- Detecting C compiler ABI info
+  -- Detecting C compiler ABI info - done
+  -- Check for working C compiler: /usr/bin/cc - skipped
+  -- Detecting C compile features
+  -- Detecting C compile features - done
+  -- Detecting CXX compiler ABI info
+  -- Detecting CXX compiler ABI info - done
+  -- Check for working CXX compiler: /usr/bin/c++ - skipped
+  -- Detecting CXX compile features
+  -- Detecting CXX compile features - done
+  -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+  -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+  -- Found Threads: TRUE
+  -- Configuring done (0.7s)
+  -- Generating done (0.0s)
+  -- Build files have been written to: /Users/froran/Projects/fk/zlog/build/test
+
+  > cmake --build build/test --target run_tests
+[  5%] Building CXX object CMakeFiles/monitor_helper.dir/monitor_helper.cpp.o
+[ 11%] Linking CXX executable monitor_helper
+[ 11%] Built target monitor_helper
+[ 16%] Building CXX object CMakeFiles/monitor_integration_test.dir/monitor_integration_test.cpp.o
+[ 22%] Building CXX object CMakeFiles/monitor_integration_test.dir/Users/froran/Projects/fk/zlog/zlogread/directorymonitor.cpp.o
+[ 27%] Building CXX object CMakeFiles/monitor_integration_test.dir/Users/froran/Projects/fk/zlog/common/date_utils.cpp.o
+[ 33%] Linking CXX executable monitor_integration_test
+[ 33%] Built target monitor_integration_test
+[ 38%] Building CXX object CMakeFiles/date_utils_test.dir/date_utils_test.cpp.o
+[ 44%] Building CXX object CMakeFiles/date_utils_test.dir/Users/froran/Projects/fk/zlog/common/date_utils.cpp.o
+[ 50%] Linking CXX executable date_utils_test
+[ 50%] Built target date_utils_test
+[ 55%] Building CXX object CMakeFiles/processor_test.dir/processor_test.cpp.o
+[ 61%] Building CXX object CMakeFiles/processor_test.dir/Users/froran/Projects/fk/zlog/zlogread/processor.cpp.o
+[ 66%] Building CXX object CMakeFiles/processor_test.dir/Users/froran/Projects/fk/zlog/common/date_utils.cpp.o
+[ 72%] Linking CXX executable processor_test
+[ 72%] Built target processor_test
+[ 77%] Building CXX object CMakeFiles/processor_integration_test.dir/processor_integration_test.cpp.o
+[ 83%] Building CXX object CMakeFiles/processor_integration_test.dir/Users/froran/Projects/fk/zlog/zlogread/processor.cpp.o
+[ 88%] Building CXX object CMakeFiles/processor_integration_test.dir/Users/froran/Projects/fk/zlog/common/date_utils.cpp.o
+[ 94%] Building CXX object CMakeFiles/processor_integration_test.dir/Users/froran/Projects/fk/zlog/zlogread/processoraction.cpp.o
+[100%] Linking CXX executable processor_integration_test
+[100%] Built target processor_integration_test
+Test project /Users/froran/Projects/fk/zlog/build/test
+    Start 1: date_utils_test
+1/4 Test #1: date_utils_test ..................   Passed    0.17 sec
+    Start 2: processor_test
+2/4 Test #2: processor_test ...................   Passed    0.15 sec
+    Start 3: processor_integration_test
+3/4 Test #3: processor_integration_test .......   Passed    0.15 sec
+    Start 4: monitor_integration_test
+4/4 Test #4: monitor_integration_test .........   Passed    0.29 sec
+
+100% tests passed, 0 tests failed out of 4
+
+Total Test time (real) =   0.77 sec
+[100%] Built target run_tests
+

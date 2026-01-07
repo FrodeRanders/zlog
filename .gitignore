@@ -1,7 +1,6 @@
 .DS_Store
 .idea/
 .cmake/
-test/
 *.log
 *.state
 .ninja_deps
