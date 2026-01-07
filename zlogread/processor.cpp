@@ -337,9 +337,3 @@ int Processor::run() {
         }
     }
 }
-
-int process(int shard, const std::string& baseDir, const std::string& dateStr, const std::string& headerFile, const std::string& payloadFile) {
-    auto action = std::make_unique<ObjectStoreAction>();
-    Processor processor(shard, baseDir, dateStr, headerFile, payloadFile, std::move(action));
-    return processor.run();
-}

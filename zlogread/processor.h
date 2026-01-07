@@ -81,6 +81,4 @@ private:
     std::unique_ptr<ProcessorAction> action_;
 };
 
-int process(int shard, const std::string& baseDir, const std::string& dateStr, const std::string& headerFile, const std::string& payloadFile);
-
 #endif // PROCESSOR_H

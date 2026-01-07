@@ -301,8 +301,3 @@ int DirectoryMonitor::run() {
         }
     }
 }
-
-int monitor_directory(const fs::path& myself, const std::string& basePath, const std::string& dateStr) {
-    DirectoryMonitor monitor(myself, basePath, dateStr);
-    return monitor.run();
-}
