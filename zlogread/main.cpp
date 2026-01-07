@@ -1,5 +1,6 @@
 #include <iostream>
 #include <string>
+#include <cstring>
 
 #include <boost/log/expressions.hpp>
 #include <boost/log/sinks/text_file_backend.hpp>
@@ -7,17 +8,12 @@
 #include <boost/log/utility/setup/console.hpp>
 
 #include "zlog.h"
+#include "processor.h"
+#include "directorymonitor.h"
 
-namespace fs = boost::filesystem;
 namespace logging = boost::log;
 namespace keywords = boost::log::keywords;
 
-// Forward declarations
-int process(int id, const std::string& baseDir, const std::string& date, const std::string& headerFile, const std::string& payloadFile);
-int monitor_directory(const fs::path& myself, const std::string& basePath, const std::string& dateStr);
-
-
-//
 int main(int argc, char* argv[]) {
     try {
         if (argc < 2) {
@@ -25,7 +21,6 @@ int main(int argc, char* argv[]) {
             return STATUS_ARGUMENTS_MISSING;
         }
 
-        // Set up console logging
         logging::add_console_log(
             std::clog,
             keywords::format = "[%TimeStamp%] [%Severity%] %Message%"

@@ -1,11 +1,11 @@
-Download a recent version of Boost, in this case 1.86.0
+Download a recent version of Boost, in this case 1.90.0
 
 # Unpack
-> tar -xf boost_1_86_0.tar.gz
+> tar -xf boost_1_90_0.tar.gz
 
-> cd boost_1_86_0
+> cd boost_1_90_0
 
-> ./bootstrap.sh --prefix=/usr/local/boost-1.86.0
+> ./bootstrap.sh --prefix=/usr/local/boost-1.90.0
 Building B2 engine..
 
 ###
@@ -14,8 +14,8 @@ Building B2 engine..
 ###
 ###
 
-Apple clang version 16.0.0 (clang-1600.0.26.3)
-Target: x86_64-apple-darwin24.0.0
+Apple clang version 17.0.0 (clang-1700.6.3.2)
+Target: arm64-apple-darwin25.2.0
 Thread model: posix
 InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
 
@@ -32,7 +32,6 @@ Performing configuration checks
     - compiler supports SSE4.1 : yes [2]
 ...
 
-...updated 19259 targets...
+...updated 19738 targets...
 
 > 
-

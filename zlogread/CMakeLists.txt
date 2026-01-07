@@ -6,26 +6,28 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
-set(BOOST_ROOT /usr/local/boost-1.86.0)
-set(BOOST_INCLUDEDIR /usr/local/boost-1.86.0/include)
-set(BOOST_LIBRARYDIR /usr/local/boost-1.86.0/lib)
+set(Boost_ROOT /usr/local/boost-1.90.0)
+set(BOOST_ROOT /usr/local/boost-1.90.0)
+set(BOOST_INCLUDEDIR /usr/local/boost-1.90.0/include)
+set(BOOST_LIBRARYDIR /usr/local/boost-1.90.0/lib)
+set(Boost_NO_SYSTEM_PATHS ON)
 
 set(TARGET_NAME zlogread)
 
 add_executable(${TARGET_NAME}
         main.cpp
         processor.cpp
-        utils.cpp
         directorymonitor.cpp
         zlog.h
         processoraction.cpp
+        ../common/date_utils.cpp
 )
 
-find_package(Boost 1.86 REQUIRED COMPONENTS
+find_package(Boost 1.90 CONFIG REQUIRED COMPONENTS
         log
         log_setup
         filesystem
-        system
+        process
         thread
         chrono
         date_time
@@ -34,12 +36,10 @@ find_package(Boost 1.86 REQUIRED COMPONENTS
 
 if(Boost_FOUND)
     include_directories(${Boost_INCLUDE_DIRS})
+    target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/../common)
     message(STATUS "Boost include dirs: ${Boost_INCLUDE_DIRS}")
     message(STATUS "Boost libraries: ${Boost_LIBRARY_DIRS}")
     target_link_libraries(${TARGET_NAME} ${Boost_LIBRARIES})
 else()
     message(FATAL_ERROR "Could not find Boost!")
 endif()
-
-
-
